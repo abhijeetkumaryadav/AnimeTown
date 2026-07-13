@@ -25,8 +25,8 @@ interface User {
 
 interface Profile {
   username?: string;
-  avatar_url?: string;     // now stores base64 data URL
-  cover_url?: string;      // now stores base64 data URL
+  avatar_url?: string;
+  cover_url?: string;
   bio?: string;
   watch_time: number;
   episodes_watched: number;
@@ -117,6 +117,150 @@ function formatWatchTime(minutes: number): string {
 }
 
 // ============================================================
+// LOGIN FORM – separate stable component (prevents focus loss)
+// ============================================================
+function LoginForm({
+  authMode,
+  email, setEmail,
+  password, setPassword,
+  username, setUsername,
+  showPassword, setShowPassword,
+  authError,
+  authLoading,
+  handleAuth,
+  setAuthMode,
+  setAuthError,
+}: any) {
+  // Updated background images
+  const animeBgs = [
+    { url: "https://mir-s3-cdn-cf.behance.net/projects/808/f5ac43143597009.Y3JvcCwxMDIyLDgwMCwwLDA.png", title: "Anime Background 1" },
+    { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR8swO_xYt1scLZRSI3Hg3jbYDx23nD57pbJhlSsdbhRg&s=10", title: "Anime Background 2" },
+    { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRnssjXHQiIzGD11ItMU6J7MOYVQTDJqXn4uspIJymEQA&s=10", title: "Anime Background 3" },
+    { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRv4eetsh4aC1t-RpwDJCOU--ZzDGA0Ecbdp7MdSKTqjg&s=10", title: "Anime Background 4" },
+    { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT5Xcj96NYaM_Hm24mqoQIvHIpNsxUU7Gdo84YHzos2Sg&s=10", title: "Anime Background 5" },
+    { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR9ECU0F2FXU87l09kWIXT0gVuSkikTxKfLhDZQoR2t6Q&s=10", title: "Anime Background 6" },
+    { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRG6Vzf1GlYQlMTnpy5YqvZnTG2iSo-uU0AVW1ls4BshQ&s=10", title: "Anime Background 7" },
+  ];
+
+  const [bgIndex, setBgIndex] = useState(0);
+
+  // Rotate every 2 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setBgIndex((prev) => (prev + 1) % animeBgs.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [animeBgs.length]);
+
+  const currentBg = animeBgs[bgIndex];
+
+  const particles = useMemo(() => [...Array(20)].map(() => ({
+    width: Math.random() * 4 + 2,
+    height: Math.random() * 4 + 2,
+    top: Math.random() * 100,
+    left: Math.random() * 100,
+    animationDelay: Math.random() * 3,
+    animationDuration: Math.random() * 3 + 2,
+  })), []);
+
+  return (
+    <div className="min-h-screen bg-[#06070d] text-zinc-100 font-sans selection:bg-red-600 flex relative overflow-hidden">
+      <div className="absolute inset-0 z-0">
+        <img src={currentBg.url} alt={currentBg.title} className="w-full h-full object-cover transition-all duration-1000" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#06070d]/95 via-[#06070d]/90 to-[#06070d]/95" />
+        <div className="absolute inset-0 bg-gradient-to-t from-red-900/20 via-transparent to-purple-900/20" />
+        <div className="absolute inset-0 overflow-hidden">
+          {particles.map((p, i) => (
+            <div key={i} className="absolute rounded-full bg-white/10 animate-pulse"
+              style={{ width: p.width + 'px', height: p.height + 'px', top: p.top + '%', left: p.left + '%', animationDelay: p.animationDelay + 's', animationDuration: p.animationDuration + 's' }} />
+          ))}
+        </div>
+      </div>
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex gap-2">
+        {animeBgs.map((_, i) => (
+          <button key={i} onClick={() => setBgIndex(i)}
+            className={`w-2 h-2 rounded-full transition-all duration-300 ${i === bgIndex ? 'bg-red-500 w-6' : 'bg-white/20 hover:bg-white/40'}`} />
+        ))}
+      </div>
+      <div className="absolute top-6 left-6 z-10">
+        <p className="text-white/20 text-xs font-black uppercase tracking-widest">{currentBg.title}</p>
+      </div>
+      <div className="relative z-10 flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-2 mb-4">
+              <Shield className="w-10 h-10 text-red-500" />
+              <Sparkles className="w-6 h-6 text-purple-400" />
+            </div>
+            <h1 className="text-3xl font-black text-white tracking-tight">{authMode === 'login' ? 'Welcome Back, Otaku!' : 'Join the Adventure'}</h1>
+            <p className="text-white/40 text-sm mt-2">{authMode === 'login' ? 'Continue your anime journey' : 'Start your anime journey today'}</p>
+          </div>
+          <div className="rounded-3xl p-8 border border-white/10 shadow-2xl" style={{ background: 'rgba(10,10,20,0.8)', backdropFilter: 'blur(40px)' }}>
+            {authError && (
+              <div className={`p-4 rounded-2xl text-sm mb-5 text-center ${authError.includes('created') || authError.includes('Check your email') ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}`}>
+                {authError}
+              </div>
+            )}
+            <form onSubmit={handleAuth} className="space-y-5">
+              {authMode === 'signup' && (
+                <div>
+                  <label className="block text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">Username</label>
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-purple-600/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition-opacity" />
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-red-400 transition-colors" />
+                    <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Choose your ninja name"
+                      className="relative w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder-white/20 focus:border-red-500/50 outline-none transition-all text-sm" required={authMode === 'signup'} suppressHydrationWarning />
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="block text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">Email</label>
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-purple-600/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition-opacity" />
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-red-400 transition-colors" />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter your email"
+                    className="relative w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder-white/20 focus:border-red-500/50 outline-none transition-all text-sm" required suppressHydrationWarning />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">Password</label>
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-purple-600/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition-opacity" />
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-red-400 transition-colors" />
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your secret key"
+                    className="relative w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-12 text-white placeholder-white/20 focus:border-red-500/50 outline-none transition-all text-sm" required suppressHydrationWarning />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors">
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <button type="submit" disabled={authLoading}
+                className="w-full py-4 rounded-2xl text-white font-bold text-sm tracking-wider transition-all hover:scale-[1.02] active:scale-95 shadow-xl disabled:opacity-50 flex items-center justify-center gap-2 group"
+                style={{ background: 'linear-gradient(135deg, #dc2626, #7c3aed)' }}>
+                {authLoading ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                    Loading...
+                  </span>
+                ) : (
+                  <>{authMode === 'login' ? 'Enter the Realm' : 'Begin Your Journey'}<ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" /></>
+                )}
+              </button>
+            </form>
+            <div className="mt-6 text-center">
+              <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} className="text-white/40 hover:text-red-400 text-sm transition-colors">
+                {authMode === 'login' ? "New here? Create an account →" : 'Already a ninja? Sign in →'}
+              </button>
+            </div>
+          </div>
+          <p className="text-center text-white/10 text-xs mt-8">🔒 Your data is protected by powerful jutsus</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 export default function ProfilePage({
@@ -124,7 +268,6 @@ export default function ProfilePage({
 }: {
   navigateTo?: (page: string, tab?: string, params?: any) => void;
 }) {
-  // ---- Auth & data state ----
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -133,8 +276,6 @@ export default function ProfilePage({
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-  const [bgIndex, setBgIndex] = useState(0);
-  const [particles, setParticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [authChecking, setAuthChecking] = useState(true);
 
@@ -150,53 +291,20 @@ export default function ProfilePage({
   const [animeList, setAnimeList] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<ProfileTab>('Overview');
   const [bio, setBio] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');   // base64 data URL
-  const [coverUrl, setCoverUrl] = useState('');     // base64 data URL
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [coverUrl, setCoverUrl] = useState('');
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // File refs for upload
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
-
-  const animeBgs = [
-    { url: "https://images.unsplash.com/photo-1560942485-b2a11cc13456?w=1200&q=80", title: "Demon Slayer" },
-    { url: "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=1200&q=80", title: "Jujutsu Kaisen" },
-    { url: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&q=80", title: "Attack on Titan" },
-    { url: "https://images.unsplash.com/photo-1601042879364-f3947d3f9c16?w=1200&q=80", title: "Solo Leveling" },
-  ];
-
-  // ---- Generate particles ----
-  useEffect(() => {
-    const newParticles = [...Array(20)].map(() => ({
-      width: Math.random() * 4 + 2,
-      height: Math.random() * 4 + 2,
-      top: Math.random() * 100,
-      left: Math.random() * 100,
-      animationDelay: Math.random() * 3,
-      animationDuration: Math.random() * 3 + 2,
-    }));
-    setParticles(newParticles);
-  }, []);
-
-  // ---- Rotate background (only when not logged in) ----
-  useEffect(() => {
-    if (user) return;
-    const interval = setInterval(() => {
-      setBgIndex((prev) => (prev + 1) % animeBgs.length);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [user]);
 
   // ---- Instant cache load ----
   useLayoutEffect(() => {
     if (typeof window !== 'undefined') {
       const cachedUser = localStorage.getItem('profileUser');
       if (cachedUser) {
-        try {
-          const parsed = JSON.parse(cachedUser);
-          setUser(parsed);
-        } catch {}
+        try { setUser(JSON.parse(cachedUser)); } catch {}
       }
       const cachedDash = localStorage.getItem('profileDashboard');
       if (cachedDash) {
@@ -232,9 +340,7 @@ export default function ProfilePage({
           user_metadata: session.user.user_metadata,
         };
         setUser(freshUser);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('profileUser', JSON.stringify(freshUser));
-        }
+        if (typeof window !== 'undefined') localStorage.setItem('profileUser', JSON.stringify(freshUser));
         await loadAllData(session.user.id);
       } else {
         if (typeof window !== 'undefined') {
@@ -256,9 +362,7 @@ export default function ProfilePage({
           user_metadata: session.user.user_metadata,
         };
         setUser(freshUser);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('profileUser', JSON.stringify(freshUser));
-        }
+        if (typeof window !== 'undefined') localStorage.setItem('profileUser', JSON.stringify(freshUser));
         await loadAllData(session.user.id);
       } else {
         if (typeof window !== 'undefined') {
@@ -273,7 +377,7 @@ export default function ProfilePage({
     return () => subscription.unsubscribe();
   }, []);
 
-  // ---- Load all user data (unchanged) ----
+  // ---- Load all user data ----
   const loadAllData = async (userId: string) => {
     try {
       const animeRes = await fetch('/api/anime').then(r => r.json());
@@ -281,25 +385,13 @@ export default function ProfilePage({
       setAnimeList(allAnime);
 
       const titleMap: Record<string, any> = {};
-      allAnime.forEach((a: any) => {
-        titleMap[a.title.toLowerCase().trim()] = a.id;
-      });
+      allAnime.forEach((a: any) => { titleMap[a.title.toLowerCase().trim()] = a.id; });
 
       const [
-        profileRes,
-        watchRes,
-        bookmarksRes,
-        ratingsRes,
-        achRes,
-        genresRes,
-        activityRes,
+        profileRes, watchRes, bookmarksRes, ratingsRes, achRes, genresRes, activityRes,
       ] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).single(),
-        supabase.from('watch_history')
-          .select('*')
-          .eq('user_id', userId)
-          .order('updated_at', { ascending: false })
-          .limit(50),   // ← increased from 10 to 50
+        supabase.from('watch_history').select('*').eq('user_id', userId).order('updated_at', { ascending: false }).limit(50),
         supabase.from('bookmarks').select('anime_id').eq('user_id', userId),
         supabase.from('ratings').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
         supabase.from('user_achievements').select('*').eq('user_id', userId).order('earned_at', { ascending: false }),
@@ -307,23 +399,19 @@ export default function ProfilePage({
         supabase.from('activity_log').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(10),
       ]);
 
-      let freshProfile = null;
       if (profileRes.data) {
-        freshProfile = profileRes.data;
-        setProfile(freshProfile);
-        setBio(freshProfile.bio || '');
-        setAvatarUrl(freshProfile.avatar_url || '');
-        setCoverUrl(freshProfile.cover_url || '');
+        setProfile(profileRes.data);
+        setBio(profileRes.data.bio || '');
+        setAvatarUrl(profileRes.data.avatar_url || '');
+        setCoverUrl(profileRes.data.cover_url || '');
       }
 
-      // --- Filter out entries where anime no longer exists ---
       const validAnimeIds = new Set(allAnime.map(a => a.id));
 
-      let freshContinue: any[] = [];
-      let freshHistory: any[] = [];
       if (watchRes.data) {
-        freshHistory = watchRes.data.filter((w: any) => validAnimeIds.has(w.anime_id));
-        freshContinue = freshHistory.map((w: any) => {
+        const history = watchRes.data.filter((w: any) => validAnimeIds.has(w.anime_id));
+        setWatchHistory(history);
+        setContinueWatching(history.map((w: any) => {
           const anime = allAnime.find((a: any) => a.id === w.anime_id);
           return {
             animeId: w.anime_id,
@@ -333,35 +421,21 @@ export default function ProfilePage({
             progress: w.progress || 0,
             updatedAt: w.updated_at,
           };
-        });
-        setContinueWatching(freshContinue);
-        setWatchHistory(freshHistory);
+        }));
       }
 
-      let freshList: any[] = [];
-      let listCount = 0;
       if (bookmarksRes.data) {
         const ids = bookmarksRes.data.map((b: any) => b.anime_id).filter((id: string) => validAnimeIds.has(id));
-        listCount = ids.length;
-        freshList = allAnime
-          .filter((a: any) => ids.includes(a.id))
-          .map((a: any) => ({
-            id: a.id,
-            title: a.title,
-            image: a.image,
-            type: a.type,
-          }));
-        setWatchlistCount(listCount);
-        setMyList(freshList);
+        setWatchlistCount(ids.length);
+        setMyList(allAnime.filter((a: any) => ids.includes(a.id)).map((a: any) => ({
+          id: a.id, title: a.title, image: a.image, type: a.type,
+        })));
       }
 
-      let freshRatings: any[] = [];
       if (ratingsRes.data) {
-        freshRatings = ratingsRes.data.filter((r: any) => validAnimeIds.has(r.anime_id));
-        setRatings(freshRatings);
+        setRatings(ratingsRes.data.filter((r: any) => validAnimeIds.has(r.anime_id)));
       }
 
-      let freshAchievements: any[] = [];
       if (achRes.data) {
         const allPossible = [
           { title: "First Watch", desc: "Watch your first anime", icon: "🎬" },
@@ -379,34 +453,27 @@ export default function ProfilePage({
           { title: "Early Adopter", desc: "Join during first month", icon: "🌱" },
         ];
         const earnedTitles = achRes.data.map((a: any) => a.title);
-        freshAchievements = allPossible.map(a => ({
+        setAchievements(allPossible.map(a => ({
           ...a,
           locked: !earnedTitles.includes(a.title),
-        }));
-        setAchievements(freshAchievements);
+        })));
       }
 
-      let freshGenres: any[] = [];
       if (genresRes.data) {
-        freshGenres = genresRes.data.map((g: any) => ({
+        setTopGenres(genresRes.data.map((g: any) => ({
           name: g.genre,
           percentage: g.percentage || 0,
           color: getGenreColor(g.genre),
-        }));
-        setTopGenres(freshGenres);
+        })));
       }
 
-      let freshActivity: any[] = [];
       if (activityRes.data) {
-        freshActivity = activityRes.data.map((a: any) => {
+        setRecentActivity(activityRes.data.map((a: any) => {
           let animeId = a.anime_id || null;
           if (!animeId) {
             const desc = a.description || '';
             for (const [title, id] of Object.entries(titleMap)) {
-              if (desc.toLowerCase().includes(title)) {
-                animeId = id;
-                break;
-              }
+              if (desc.toLowerCase().includes(title)) { animeId = id; break; }
             }
           }
           return {
@@ -416,23 +483,21 @@ export default function ProfilePage({
             rating: a.rating || null,
             animeId: animeId,
           };
-        });
-        setRecentActivity(freshActivity);
+        }));
       }
 
       if (typeof window !== 'undefined') {
-        const dashCache = {
-          profile: freshProfile,
-          continueWatching: freshContinue,
-          recentActivity: freshActivity,
-          achievements: freshAchievements,
-          topGenres: freshGenres,
-          watchHistory: freshHistory,
-          myList: freshList,
-          ratings: freshRatings,
-          watchlistCount: listCount,
-        };
-        localStorage.setItem('profileDashboard', JSON.stringify(dashCache));
+        localStorage.setItem('profileDashboard', JSON.stringify({
+          profile: profileRes.data || null,
+          continueWatching: continueWatching,
+          recentActivity: recentActivity,
+          achievements: achievements,
+          topGenres: topGenres,
+          watchHistory: watchHistory,
+          myList: myList,
+          ratings: ratings,
+          watchlistCount: watchlistCount,
+        }));
       }
 
       setDataLoaded(true);
@@ -469,8 +534,7 @@ export default function ProfilePage({
         if (error) setAuthError(error.message);
       } else {
         const { error } = await supabase.auth.signUp({
-          email,
-          password,
+          email, password,
           options: { data: { username: username || email.split('@')[0] } }
         });
         if (error) setAuthError(error.message);
@@ -491,16 +555,13 @@ export default function ProfilePage({
     setUser(null);
   };
 
-  // ---- Handle image upload and convert to base64 ----
+  // ---- Handle image upload (base64) ----
   const handleImageUpload = (file: File, type: 'avatar' | 'cover') => {
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = reader.result as string;
-      if (type === 'avatar') {
-        setAvatarUrl(base64);
-      } else {
-        setCoverUrl(base64);
-      }
+      if (type === 'avatar') setAvatarUrl(base64);
+      else setCoverUrl(base64);
     };
     reader.readAsDataURL(file);
   };
@@ -509,15 +570,12 @@ export default function ProfilePage({
   const handleUpdateProfile = async () => {
     if (!user) return;
     try {
-      await supabase
-        .from('profiles')
-        .update({
-          avatar_url: avatarUrl,      // base64 data
-          cover_url: coverUrl,        // base64 data
-          bio: bio,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
+      await supabase.from('profiles').update({
+        avatar_url: avatarUrl,
+        cover_url: coverUrl,
+        bio: bio,
+        updated_at: new Date().toISOString(),
+      }).eq('id', user.id);
       setProfile(prev => prev ? { ...prev, avatar_url: avatarUrl, cover_url: coverUrl, bio } : null);
       setShowEditProfile(false);
     } catch (error) {
@@ -529,105 +587,6 @@ export default function ProfilePage({
 
   // ---- Render logic ----
   const showSkeleton = authChecking && !user;
-
-  const LoginForm = () => {
-    const currentBg = animeBgs[bgIndex];
-    return (
-      <div className="min-h-screen bg-[#06070d] text-zinc-100 font-sans selection:bg-red-600 flex relative overflow-hidden">
-        <div className="absolute inset-0 z-0">
-          <img src={currentBg.url} alt={currentBg.title} className="w-full h-full object-cover transition-all duration-1000" />
-          <div className="absolute inset-0 bg-gradient-to-br from-[#06070d]/95 via-[#06070d]/90 to-[#06070d]/95" />
-          <div className="absolute inset-0 bg-gradient-to-t from-red-900/20 via-transparent to-purple-900/20" />
-          <div className="absolute inset-0 overflow-hidden">
-            {particles.map((p, i) => (
-              <div key={i} className="absolute rounded-full bg-white/10 animate-pulse"
-                style={{ width: p.width + 'px', height: p.height + 'px', top: p.top + '%', left: p.left + '%', animationDelay: p.animationDelay + 's', animationDuration: p.animationDuration + 's' }} />
-            ))}
-          </div>
-        </div>
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex gap-2">
-          {animeBgs.map((_, i) => (
-            <button key={i} onClick={() => setBgIndex(i)}
-              className={`w-2 h-2 rounded-full transition-all duration-300 ${i === bgIndex ? 'bg-red-500 w-6' : 'bg-white/20 hover:bg-white/40'}`} />
-          ))}
-        </div>
-        <div className="absolute top-6 left-6 z-10">
-          <p className="text-white/20 text-xs font-black uppercase tracking-widest">{currentBg.title}</p>
-        </div>
-        <div className="relative z-10 flex-1 flex items-center justify-center p-4">
-          <div className="w-full max-w-md">
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center gap-2 mb-4">
-                <Shield className="w-10 h-10 text-red-500" />
-                <Sparkles className="w-6 h-6 text-purple-400" />
-              </div>
-              <h1 className="text-3xl font-black text-white tracking-tight">{authMode === 'login' ? 'Welcome Back, Otaku!' : 'Join the Adventure'}</h1>
-              <p className="text-white/40 text-sm mt-2">{authMode === 'login' ? 'Continue your anime journey' : 'Start your anime journey today'}</p>
-            </div>
-            <div className="rounded-3xl p-8 border border-white/10 shadow-2xl" style={{ background: 'rgba(10,10,20,0.8)', backdropFilter: 'blur(40px)' }}>
-              {authError && (
-                <div className={`p-4 rounded-2xl text-sm mb-5 text-center ${authError.includes('created') || authError.includes('Check your email') ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}`}>
-                  {authError}
-                </div>
-              )}
-              <form onSubmit={handleAuth} className="space-y-5">
-                {authMode === 'signup' && (
-                  <div>
-                    <label className="block text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">Username</label>
-                    <div className="relative group">
-                      <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-purple-600/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition-opacity" />
-                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-red-400 transition-colors" />
-                      <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Choose your ninja name"
-                        className="relative w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder-white/20 focus:border-red-500/50 outline-none transition-all text-sm" required={authMode === 'signup'} suppressHydrationWarning />
-                    </div>
-                  </div>
-                )}
-                <div>
-                  <label className="block text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">Email</label>
-                  <div className="relative group">
-                    <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-purple-600/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition-opacity" />
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-red-400 transition-colors" />
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter your email"
-                      className="relative w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder-white/20 focus:border-red-500/50 outline-none transition-all text-sm" required suppressHydrationWarning />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">Password</label>
-                  <div className="relative group">
-                    <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-purple-600/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition-opacity" />
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-red-400 transition-colors" />
-                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your secret key"
-                      className="relative w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-12 text-white placeholder-white/20 focus:border-red-500/50 outline-none transition-all text-sm" required suppressHydrationWarning />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors">
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-                <button type="submit" disabled={authLoading}
-                  className="w-full py-4 rounded-2xl text-white font-bold text-sm tracking-wider transition-all hover:scale-[1.02] active:scale-95 shadow-xl disabled:opacity-50 flex items-center justify-center gap-2 group"
-                  style={{ background: 'linear-gradient(135deg, #dc2626, #7c3aed)' }}>
-                  {authLoading ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                      Loading...
-                    </span>
-                  ) : (
-                    <>{authMode === 'login' ? 'Enter the Realm' : 'Begin Your Journey'}<ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" /></>
-                  )}
-                </button>
-              </form>
-              <div className="mt-6 text-center">
-                <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} className="text-white/40 hover:text-red-400 text-sm transition-colors">
-                  {authMode === 'login' ? "New here? Create an account →" : 'Already a ninja? Sign in →'}
-                </button>
-              </div>
-            </div>
-            <p className="text-center text-white/10 text-xs mt-8">🔒 Your data is protected by powerful jutsus</p>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   const SkeletonPlaceholder = () => (
     <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-red-600 flex flex-col">
@@ -666,7 +625,6 @@ export default function ProfilePage({
     </div>
   );
 
-  // ---- Stats ----
   const stats = profile ? {
     watchTime: profile.watch_time || 0,
     episodesWatched: profile.episodes_watched || 0,
@@ -676,7 +634,6 @@ export default function ProfilePage({
 
   const displayName = profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || 'AnimeLover';
 
-  // ---- Filtered data (with memo) ----
   const filteredContinueWatching = useMemo(() => {
     if (!animeList.length) return [];
     const validIds = new Set(animeList.map(a => a.id));
@@ -701,19 +658,14 @@ export default function ProfilePage({
     return ratings.filter(item => validIds.has(item.anime_id));
   }, [ratings, animeList]);
 
-  // ---- Dashboard ----
   const Dashboard = () => (
     <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-red-600 flex flex-col">
       <div className="flex-1 overflow-y-auto pb-24 md:pb-12">
         <main className="w-full max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-6">
-          {/* HERO BANNER – added edit button on the stats card */}
+          {/* HERO BANNER */}
           <div
             className="relative w-full rounded-2xl md:rounded-3xl bg-gradient-to-r from-purple-900/60 via-red-900/40 to-orange-900/30 bg-cover bg-center overflow-hidden border border-zinc-900 shadow-xl min-h-[200px]"
-            style={{
-              backgroundImage: profile?.cover_url
-                ? `url(${profile.cover_url})`
-                : undefined,
-            }}
+            style={{ backgroundImage: profile?.cover_url ? `url(${profile.cover_url})` : undefined }}
           >
             <div className="absolute inset-0 bg-gradient-to-t from-[#07070a] via-[#07070a]/50 to-black/20 z-10" />
             <div className="relative z-20 p-4 md:p-8 pt-24 md:pt-32 flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -728,9 +680,7 @@ export default function ProfilePage({
                   )}
                 </div>
                 <div className="space-y-0.5 md:space-y-1 flex-1">
-                  <h1 className="text-xl md:text-2xl font-black tracking-tight text-white">
-                    {displayName}
-                  </h1>
+                  <h1 className="text-xl md:text-2xl font-black tracking-tight text-white">{displayName}</h1>
                   <p className="text-[10px] md:text-xs text-zinc-400">@{user?.email?.split('@')[0]}</p>
                   <p className="text-[10px] text-zinc-500 mt-1">{profile?.bio || 'No bio yet'}</p>
                 </div>
@@ -741,7 +691,6 @@ export default function ProfilePage({
                   <div><p className="text-sm md:text-base font-black text-white">{stats.episodesWatched}</p><p className="text-[8px] md:text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Episodes</p></div>
                   <div><p className="text-sm md:text-base font-black text-white">{watchlistCount}</p><p className="text-[8px] md:text-[9px] uppercase font-bold text-zinc-500 tracking-wider">List</p></div>
                 </div>
-                {/* ✏️ EDIT BUTTON (opens the same edit modal) */}
                 <button
                   onClick={() => setShowEditProfile(true)}
                   className="absolute top-2 right-2 p-1.5 bg-zinc-800/50 hover:bg-zinc-700 rounded-lg text-zinc-400 hover:text-white transition-colors"
@@ -776,21 +725,20 @@ export default function ProfilePage({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                 <div className="md:col-span-2 space-y-6">
                   <div className="grid grid-cols-2 gap-3">
-                    {[1,2,3,4].map(i => (
-                      <div key={i} className="bg-[#0b0b10] border border-zinc-900 p-4 rounded-xl"><SkeletonRow /><SkeletonRow /></div>
-                    ))}
+                    {[1,2,3,4].map(i => (<div key={i} className="bg-[#0b0b10] border border-zinc-900 p-4 rounded-xl"><SkeletonRow /><SkeletonRow /></div>))}
                   </div>
                 </div>
                 <div className="space-y-6">
-                  <div className="bg-[#0b0b10] border border-zinc-900 p-4 rounded-xl space-y-3">
-                    <SkeletonRow /><SkeletonRow /><SkeletonRow />
-                  </div>
+                  <div className="bg-[#0b0b10] border border-zinc-900 p-4 rounded-xl space-y-3"><SkeletonRow /><SkeletonRow /><SkeletonRow /></div>
                 </div>
               </div>
             </div>
           ) : (
             <>
-              {/* OVERVIEW */}
+              {/* Overview / Watch History / My List / Ratings / Achievements / Settings – unchanged */}
+              {/* (the entire content of these sections is identical to your previous code) */}
+              {/* I'll include them all for completeness */}
+
               {activeTab === "Overview" && (
                 <>
                   <section className="space-y-3">
@@ -898,7 +846,6 @@ export default function ProfilePage({
                 </>
               )}
 
-              {/* WATCH HISTORY */}
               {activeTab === "Watch History" && (
                 <section className="space-y-4">
                   <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
@@ -916,11 +863,8 @@ export default function ProfilePage({
                         const anime = animeList.find(a => a.id === item.anime_id);
                         const progress = item.progress || 0;
                         return (
-                          <div
-                            key={idx}
-                            className="bg-[#0b0b10] border border-zinc-900 rounded-xl overflow-hidden hover:border-red-500/30 transition-all group cursor-pointer"
-                            onClick={() => handleNavigate('watch', undefined, { anime: item.anime_id })}
-                          >
+                          <div key={idx} className="bg-[#0b0b10] border border-zinc-900 rounded-xl overflow-hidden hover:border-red-500/30 transition-all group cursor-pointer"
+                            onClick={() => handleNavigate('watch', undefined, { anime: item.anime_id })}>
                             <div className="flex items-start gap-4 p-3">
                               <div className="w-16 h-24 rounded-lg bg-zinc-900 overflow-hidden shrink-0">
                                 <img src={anime?.image || "https://images.unsplash.com/photo-1560942485-b2a11cc13456?w=200&q=80"} alt="" className="w-full h-full object-cover" />
@@ -945,16 +889,13 @@ export default function ProfilePage({
                 </section>
               )}
 
-              {/* MY LIST */}
               {activeTab === "My List" && (
                 <section className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                       <List className="w-3.5 h-3.5 text-red-500" /> My List ({filteredMyList.length})
                     </h3>
-                    <button onClick={() => handleNavigate('mylist')} className="text-[10px] font-bold text-red-500 hover:underline">
-                      Open Full List →
-                    </button>
+                    <button onClick={() => handleNavigate('mylist')} className="text-[10px] font-bold text-red-500 hover:underline">Open Full List →</button>
                   </div>
                   {filteredMyList.length === 0 ? (
                     <div className="bg-[#0b0b10] border border-zinc-900 rounded-xl p-12 text-center">
@@ -980,7 +921,6 @@ export default function ProfilePage({
                 </section>
               )}
 
-              {/* RATINGS */}
               {activeTab === "Ratings" && (
                 <section className="space-y-4">
                   <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
@@ -1023,7 +963,6 @@ export default function ProfilePage({
                 </section>
               )}
 
-              {/* ACHIEVEMENTS */}
               {activeTab === "Achievements" && (
                 <section className="space-y-4">
                   <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
@@ -1044,7 +983,6 @@ export default function ProfilePage({
                 </section>
               )}
 
-              {/* SETTINGS */}
               {activeTab === "Settings" && (
                 <section className="space-y-6 max-w-2xl">
                   <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
@@ -1052,7 +990,6 @@ export default function ProfilePage({
                   </h3>
 
                   <div className="bg-[#0b0b10] border border-zinc-900 rounded-xl p-6 space-y-6">
-                    {/* Profile */}
                     <div>
                       <h4 className="text-xs font-bold text-zinc-300 mb-3">Profile</h4>
                       <div className="space-y-3">
@@ -1082,7 +1019,6 @@ export default function ProfilePage({
                       </div>
                     </div>
 
-                    {/* Legal & Policies – mobile only */}
                     <div className="block md:hidden border-t border-zinc-900 pt-4">
                       <h4 className="text-xs font-bold text-zinc-300 mb-3">Legal & Policies</h4>
                       <div className="flex flex-col gap-2">
@@ -1098,7 +1034,6 @@ export default function ProfilePage({
                       </div>
                     </div>
 
-                    {/* Connect – mobile only */}
                     <div className="block md:hidden border-t border-zinc-900 pt-4">
                       <h4 className="text-xs font-bold text-zinc-300 mb-3">Connect</h4>
                       <div className="flex flex-col gap-2">
@@ -1114,13 +1049,9 @@ export default function ProfilePage({
                       </div>
                     </div>
 
-                    {/* Account */}
                     <div className="border-t border-zinc-900 pt-4">
                       <h4 className="text-xs font-bold text-zinc-300 mb-3">Account</h4>
-                      <button
-                        onClick={handleSignOut}
-                        className="bg-red-600 hover:bg-red-700 transition-colors px-4 py-2 rounded-lg text-xs font-bold text-white flex items-center gap-2"
-                      >
+                      <button onClick={handleSignOut} className="bg-red-600 hover:bg-red-700 transition-colors px-4 py-2 rounded-lg text-xs font-bold text-white flex items-center gap-2">
                         <LogOut className="w-3.5 h-3.5" /> Sign Out
                       </button>
                     </div>
@@ -1132,7 +1063,7 @@ export default function ProfilePage({
         </main>
       </div>
 
-      {/* EDIT PROFILE MODAL – now with file uploads */}
+      {/* EDIT PROFILE MODAL */}
       {showEditProfile && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
           <div className="bg-[#0b0b10] border border-zinc-800 rounded-2xl p-6 w-full max-w-md space-y-4">
@@ -1141,7 +1072,6 @@ export default function ProfilePage({
               <button onClick={() => setShowEditProfile(false)} className="text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-4">
-              {/* Avatar upload */}
               <div>
                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Avatar</label>
                 <div className="flex items-center gap-3 mt-1">
@@ -1152,29 +1082,17 @@ export default function ProfilePage({
                       <div className="w-full h-full flex items-center justify-center text-xl text-red-500">{displayName.charAt(0)}</div>
                     )}
                   </div>
-                  <button
-                    onClick={() => avatarInputRef.current?.click()}
-                    className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-xs font-bold text-zinc-300 hover:bg-zinc-800 transition-colors flex items-center gap-1"
-                  >
+                  <button onClick={() => avatarInputRef.current?.click()} className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-xs font-bold text-zinc-300 hover:bg-zinc-800 transition-colors flex items-center gap-1">
                     <Upload className="w-3.5 h-3.5" /> Upload
                   </button>
-                  <input
-                    ref={avatarInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleImageUpload(file, 'avatar');
-                    }}
-                  />
-                  {avatarUrl && (
-                    <button onClick={() => setAvatarUrl('')} className="text-[10px] text-red-400 hover:underline">Remove</button>
-                  )}
+                  <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImageUpload(file, 'avatar');
+                  }} />
+                  {avatarUrl && <button onClick={() => setAvatarUrl('')} className="text-[10px] text-red-400 hover:underline">Remove</button>}
                 </div>
               </div>
 
-              {/* Cover upload */}
               <div>
                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Cover Image</label>
                 <div className="flex items-center gap-3 mt-1">
@@ -1185,42 +1103,24 @@ export default function ProfilePage({
                       <div className="w-full h-full flex items-center justify-center text-xs text-zinc-500">No cover</div>
                     )}
                   </div>
-                  <button
-                    onClick={() => coverInputRef.current?.click()}
-                    className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-xs font-bold text-zinc-300 hover:bg-zinc-800 transition-colors flex items-center gap-1"
-                  >
+                  <button onClick={() => coverInputRef.current?.click()} className="px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-xs font-bold text-zinc-300 hover:bg-zinc-800 transition-colors flex items-center gap-1">
                     <Upload className="w-3.5 h-3.5" /> Upload
                   </button>
-                  <input
-                    ref={coverInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleImageUpload(file, 'cover');
-                    }}
-                  />
-                  {coverUrl && (
-                    <button onClick={() => setCoverUrl('')} className="text-[10px] text-red-400 hover:underline">Remove</button>
-                  )}
+                  <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImageUpload(file, 'cover');
+                  }} />
+                  {coverUrl && <button onClick={() => setCoverUrl('')} className="text-[10px] text-red-400 hover:underline">Remove</button>}
                 </div>
               </div>
 
-              {/* Bio */}
               <div>
                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Bio</label>
-                <textarea
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-red-500 mt-1 h-20 resize-none"
-                  suppressHydrationWarning
-                />
+                <textarea value={bio} onChange={(e) => setBio(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-red-500 mt-1 h-20 resize-none" suppressHydrationWarning />
               </div>
             </div>
-            <button onClick={handleUpdateProfile} className="w-full bg-red-600 hover:bg-red-700 py-2.5 rounded-lg text-sm font-bold text-white transition-colors">
-              Save Changes
-            </button>
+            <button onClick={handleUpdateProfile} className="w-full bg-red-600 hover:bg-red-700 py-2.5 rounded-lg text-sm font-bold text-white transition-colors">Save Changes</button>
           </div>
         </div>
       )}
@@ -1228,13 +1128,20 @@ export default function ProfilePage({
   );
 
   // ---- FINAL RENDER ----
-  if (showSkeleton) {
-    return <SkeletonPlaceholder />;
-  }
-
-  if (!user) {
-    return <LoginForm />;
-  }
-
+  if (showSkeleton) return <SkeletonPlaceholder />;
+  if (!user) return (
+    <LoginForm
+      authMode={authMode}
+      email={email} setEmail={setEmail}
+      password={password} setPassword={setPassword}
+      username={username} setUsername={setUsername}
+      showPassword={showPassword} setShowPassword={setShowPassword}
+      authError={authError}
+      authLoading={authLoading}
+      handleAuth={handleAuth}
+      setAuthMode={setAuthMode}
+      setAuthError={setAuthError}
+    />
+  );
   return <Dashboard />;
 }
