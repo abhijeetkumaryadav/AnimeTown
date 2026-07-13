@@ -1,0 +1,54 @@
+[
+  {
+    "code": "eng",
+    "name": "English",
+    "flag": "🇬🇧",
+    "type": "DUB"
+  },
+  {
+    "code": "jap",
+    "name": "Japanese",
+    "flag": "🇯🇵",
+    "type": "SUB"
+  },
+  {
+    "code": "hin",
+    "name": "Hindi",
+    "flag": "🇮🇳",
+    "type": "DUB"
+  },
+  {
+    "code": "tam",
+    "name": "Tamil",
+    "flag": "🚫",
+    "type": "REMOVED",
+    "removed": true
+  },
+  {
+    "code": "tel",
+    "name": "Telugu",
+    "flag": "🇮🇳",
+    "type": "DUB"
+  },
+  {
+    "code": "mal",
+    "name": "Malayalam",
+    "flag": "🚫",
+    "type": "REMOVED",
+    "removed": true
+  },
+  {
+    "code": "kan",
+    "name": "Kannada",
+    "flag": "🚫",
+    "type": "REMOVED",
+    "removed": true
+  },
+  {
+    "code": "ben",
+    "name": "Bengali",
+    "flag": "🚫",
+    "type": "REMOVED",
+    "removed": true
+  }
+]
