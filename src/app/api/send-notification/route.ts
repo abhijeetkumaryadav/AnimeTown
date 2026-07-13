@@ -4,18 +4,36 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore } from 'firebase-admin/firestore';
 
-// Initialise only once
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID!,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-    }),
-  });
+// This runs only on the server, but we must guard against missing env variables
+const privateKey = process.env.FIREBASE_PRIVATE_KEY || '';
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL || '';
+const projectId = process.env.FIREBASE_PROJECT_ID || '';
+
+let initialized = false;
+if (privateKey && clientEmail && projectId && !getApps().length) {
+  try {
+    initializeApp({
+      credential: cert({
+        projectId,
+        clientEmail,
+        privateKey: privateKey.replace(/\\n/g, '\n'),
+      }),
+    });
+    initialized = true;
+  } catch (error) {
+    console.error('Firebase Admin initialization error:', error);
+  }
 }
 
 export async function POST(request: NextRequest) {
+  // If Firebase Admin is not initialized, return an error
+  if (!initialized) {
+    return NextResponse.json(
+      { error: 'Server configuration error: Firebase credentials not set' },
+      { status: 500 }
+    );
+  }
+
   try {
     const { title, body, icon } = await request.json();
 
@@ -31,7 +49,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'No tokens' });
     }
 
-    // Use webpush for platform‑specific options (image, icon)
     const response = await getMessaging().sendEachForMulticast({
       tokens,
       webpush: {
@@ -39,7 +56,7 @@ export async function POST(request: NextRequest) {
           title,
           body,
           icon: icon,
-          image: icon,   // some browsers prefer this for a large image
+          image: icon,
         },
       },
     });
