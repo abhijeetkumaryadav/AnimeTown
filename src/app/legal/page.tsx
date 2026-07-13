@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Shield, FileText, AlertTriangle,
   Mail, Clock, Info, ShieldAlert
@@ -24,29 +24,27 @@ export default function LegalPage({
   navigateTo,
   initialTab = 'privacy',
 }: LegalPageProps) {
-  const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Derive tab from URL search params (always up‑to‑date)
-  const tabParam = searchParams?.get('tab') as LegalTab | null;
+  // Helper to read tab from URL without useSearchParams
+  const getTabFromURL = useCallback((): LegalTab => {
+    if (typeof window === 'undefined') return initialTab;
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab') as LegalTab | null;
+    return tab && (tab === 'privacy' || tab === 'terms' || tab === 'disclaimer') ? tab : initialTab;
+  }, [initialTab]);
 
-  const [activeTab, setActiveTab] = useState<LegalTab>(() => {
-    if (tabParam && (tabParam === 'privacy' || tabParam === 'terms' || tabParam === 'disclaimer')) {
-      return tabParam;
-    }
-    return initialTab;
-  });
+  const [activeTab, setActiveTab] = useState<LegalTab>(getTabFromURL);
 
-  // Keep state in sync when the URL changes (e.g., back/forward, router.push)
+  // Keep state in sync when the URL changes (back/forward, push)
   useEffect(() => {
-    if (tabParam === 'privacy' || tabParam === 'terms' || tabParam === 'disclaimer') {
-      setActiveTab(tabParam);
-    }
-  }, [tabParam]);
+    const handlePopstate = () => setActiveTab(getTabFromURL());
+    window.addEventListener('popstate', handlePopstate);
+    return () => window.removeEventListener('popstate', handlePopstate);
+  }, [getTabFromURL]);
 
   const handleTabChange = (tab: LegalTab) => {
     setActiveTab(tab);
-    // Use Next.js router to update the URL without a full reload
     router.push(`/legal?tab=${tab}`, { scroll: false });
   };
 

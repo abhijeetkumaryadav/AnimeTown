@@ -44,20 +44,21 @@ const NAV_ITEMS = [
   { id: 'reports', label: 'Reports', icon: Flag, color: '#ef4444' },
 ];
 
+// ✅ FIXED: Type annotations added to endpoint, body, and id parameters
 const API = {
-  fetch: async (endpoint) => {
+  fetch: async (endpoint: string) => {
     const res = await fetch(`/api/${endpoint}`);
     return await res.json();
   },
-  post: async (endpoint, body) => {
+  post: async (endpoint: string, body: any) => {
     const res = await fetch(`/api/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     return await res.json();
   },
-  put: async (endpoint, body) => {
+  put: async (endpoint: string, body: any) => {
     const res = await fetch(`/api/${endpoint}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     return await res.json();
   },
-  delete: async (endpoint, id) => {
+  delete: async (endpoint: string, id: any) => {
     const res = await fetch(`/api/${endpoint}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
     return await res.json();
   },
@@ -68,56 +69,57 @@ export default function AdminPanel() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [activeSection, setActiveSection] = useState('api-import');
-  const [notification, setNotification] = useState(null);
+  const [notification, setNotification] = useState<{ msg: string; type: string } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loginLoading, setLoginLoading] = useState(false); // separate loading for login
+  const [loginLoading, setLoginLoading] = useState(false);
   
-  const [animeList, setAnimeList] = useState([]);
-  const [episodes, setEpisodes] = useState([]);
-  const [scheduleItems, setScheduleItems] = useState([]);
-  const [newsItems, setNewsItems] = useState([]);
-  const [featuredIds, setFeaturedIds] = useState([]);
-  const [newlyAddedIds, setNewlyAddedIds] = useState([]);
-  const [customLanguagesRaw, setCustomLanguagesRaw] = useState([]);
+  const [animeList, setAnimeList] = useState<any[]>([]);
+  const [episodes, setEpisodes] = useState<any[]>([]);
+  const [scheduleItems, setScheduleItems] = useState<any[]>([]);
+  const [newsItems, setNewsItems] = useState<any[]>([]);
+  const [featuredIds, setFeaturedIds] = useState<string[]>([]);
+  const [newlyAddedIds, setNewlyAddedIds] = useState<string[]>([]);
+  const [customLanguagesRaw, setCustomLanguagesRaw] = useState<any[]>([]);
   const [activeLanguage, setActiveLanguage] = useState('eng');
   
   // ---------- Reports state ----------
-  const [reports, setReports] = useState([]);
+  const [reports, setReports] = useState<any[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
   
   const [importQuery, setImportQuery] = useState('');
-  const [importResults, setImportResults] = useState([]);
+  const [importResults, setImportResults] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   
-  const [selectedAnimeForEp, setSelectedAnimeForEp] = useState(null);
+  const [selectedAnimeForEp, setSelectedAnimeForEp] = useState<any>(null);
   const [episodeForm, setEpisodeForm] = useState({ 
     number: 1, title: '', link: ''
   });
-  const [editingEpisodeId, setEditingEpisodeId] = useState(null);
+  const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
   
-  const [scheduleForm, setScheduleForm] = useState({ day: 1, time: '18:00', title: '', episode: 1, link: '', anime_id: null });
-  const [editingSchedule, setEditingSchedule] = useState(null);
+  const [scheduleForm, setScheduleForm] = useState({ day: 1, time: '18:00', title: '', episode: 1, link: '', anime_id: null as any });
+  const [editingSchedule, setEditingSchedule] = useState<any>(null);
   
   const [newsForm, setNewsForm] = useState({ title: '', content: '', image: '', status: 'draft' });
-  const [editingNews, setEditingNews] = useState(null);
+  const [editingNews, setEditingNews] = useState<any>(null);
   
   const [showAddLang, setShowAddLang] = useState(false);
   const [newLang, setNewLang] = useState({ code: '', name: '', flag: '', type: 'DUB' });
-  const [editingLanguage, setEditingLanguage] = useState(null);
+  const [editingLanguage, setEditingLanguage] = useState<any>(null);
   
   const [searchAnime, setSearchAnime] = useState('');
-  const [editAnimeModal, setEditAnimeModal] = useState(null);
-  const [editAnimeForm, setEditAnimeForm] = useState({});
+  const [editAnimeModal, setEditAnimeModal] = useState<any>(null);
+  const [editAnimeForm, setEditAnimeForm] = useState<any>({});
 
   const ALL_GENRES = ["Action", "Adult", "Adult Cast", "Adventure", "Animation", "Anthropomorphic", "Award Winning", "Boys Love", "Comedy", "Crime", "Crossdressing", "Delinquents", "Drama", "Ecchi", "Family", "Fantasy", "Girls Love", "Gore", "Gourmet", "Harem", "Hentai", "High Stakes Game", "Historical", "Horror", "Isekai", "Josei", "Love Polygon", "Magical Sex Shift", "Martial Arts", "Mecha", "Medical", "Military", "Music", "Mystery", "Mythology", "Otaku Culture", "Parody", "Psychological", "Racing", "Reincarnation", "Romance", "Samurai", "School", "Sci-Fi", "Seinen", "Shoujo", "Shounen", "Sports", "Strategy Game", "Super Power", "Supernatural", "Survival", "Suspense", "Thriller", "Time Travel", "Urban Fantasy", "Vampire", "Video Game"];
 
-  const showNotification = (msg, type = 'success') => {
+  // ✅ TYPED showNotification
+  const showNotification = (msg: string, type: string = 'success') => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // ✅ SECURE LOGIN – password stays on the server
-  const handleLogin = async (e) => {
+  // ✅ TYPED handleLogin
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
     setLoginLoading(true);
@@ -156,7 +158,7 @@ export default function AdminPanel() {
   };
 
   // Delete a resolved report
-  const deleteReport = async (reportId) => {
+  const deleteReport = async (reportId: string) => {
     try {
       await deleteDoc(doc(db, 'reports', reportId));
       setReports(prev => prev.filter(r => r.id !== reportId));
@@ -176,7 +178,7 @@ export default function AdminPanel() {
 
   // ----- Display languages (unchanged) -----
   const displayLanguages = (() => {
-    const langMap = {};
+    const langMap: Record<string, any> = {};
     BASE_LANGUAGES.forEach(lang => { langMap[lang.code] = { ...lang }; });
     customLanguagesRaw.forEach(lang => { langMap[lang.code] = { ...lang }; });
     return Object.values(langMap).filter((lang: any) => !lang.removed);
@@ -205,9 +207,10 @@ export default function AdminPanel() {
 
   useEffect(() => { if (isLoggedIn) loadAllData(); }, [isLoggedIn]);
 
-  const dedupeResults = (results) => {
+  // ✅ TYPED dedupeResults
+  const dedupeResults = (results: any[]) => {
     const seen = new Set();
-    return results.filter(item => {
+    return results.filter((item: any) => {
       const key = `${item.title?.toLowerCase().trim()}_${item.mal_id || item.anilist_id || item.kitsu_id || ''}`;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -217,7 +220,7 @@ export default function AdminPanel() {
 
   // ----- Language helpers -----
   const getAllLanguagesForSave = () => {
-    const langMap = {};
+    const langMap: Record<string, any> = {};
     BASE_LANGUAGES.forEach(lang => { langMap[lang.code] = { ...lang }; });
     customLanguagesRaw.forEach(lang => { langMap[lang.code] = { ...lang }; });
     return Object.values(langMap);
@@ -231,7 +234,7 @@ export default function AdminPanel() {
     if (!newLang.code || !newLang.name) { showNotification('Code and name required!', 'error'); return; }
     if (newLang.code.length !== 3) { showNotification('Code must be 3 letters!', 'error'); return; }
     
-    const updated = customLanguagesRaw.filter(l => l.code !== newLang.code);
+    const updated = customLanguagesRaw.filter((l: any) => l.code !== newLang.code);
     updated.push({ ...newLang, id: Date.now(), code: newLang.code.toLowerCase() });
     setCustomLanguagesRaw(updated);
     
@@ -246,7 +249,7 @@ export default function AdminPanel() {
   const updateLanguage = async () => {
     if (!newLang.code || !newLang.name) { showNotification('Code and name required!', 'error'); return; }
     
-    const updated = customLanguagesRaw.filter(l => l.code !== editingLanguage.code && l.code !== newLang.code);
+    const updated = customLanguagesRaw.filter((l: any) => l.code !== editingLanguage.code && l.code !== newLang.code);
     updated.push({ ...newLang, id: editingLanguage.id || Date.now(), code: newLang.code.toLowerCase() });
     setCustomLanguagesRaw(updated);
     
@@ -258,15 +261,16 @@ export default function AdminPanel() {
     showNotification(`Language "${newLang.name}" updated!`);
   };
 
-  const removeLanguage = async (code) => {
-    const updated = customLanguagesRaw.map(l => {
+  // ✅ TYPED removeLanguage
+  const removeLanguage = async (code: string) => {
+    const updated = customLanguagesRaw.map((l: any) => {
       if (l.code === code) {
         return { ...l, removed: true, flag: '🚫', type: 'REMOVED' };
       }
       return l;
     });
     
-    if (!updated.some(l => l.code === code)) {
+    if (!updated.some((l: any) => l.code === code)) {
       const baseLang = BASE_LANGUAGES.find(l => l.code === code);
       if (baseLang) {
         updated.push({ 
@@ -285,11 +289,12 @@ export default function AdminPanel() {
     showNotification('Language removed!');
   };
 
-  const openEditAnime = (anime) => { setEditAnimeModal(anime); setEditAnimeForm({ ...anime }); };
+  // ✅ TYPED openEditAnime
+  const openEditAnime = (anime: any) => { setEditAnimeModal(anime); setEditAnimeForm({ ...anime }); };
   const saveAnimeEdit = async () => {
     try {
       await API.put('anime', editAnimeForm);
-      setAnimeList(prev => prev.map(a => a.id === editAnimeForm.id ? { ...a, ...editAnimeForm } : a));
+      setAnimeList(prev => prev.map((a: any) => a.id === editAnimeForm.id ? { ...a, ...editAnimeForm } : a));
       setEditAnimeModal(null);
       showNotification('Anime updated!');
     } catch (err) { showNotification('Failed to update!', 'error'); }
@@ -375,17 +380,18 @@ export default function AdminPanel() {
     setIsImporting(false);
   };
 
-  const importApiResult = async (apiItem) => {
+  // ✅ TYPED importApiResult
+  const importApiResult = async (apiItem: any) => {
     const animeData = apiResultToAnime(apiItem);
     try {
       const result = await API.post('anime', animeData);
       if (result.success && result.anime) {
         setAnimeList(prev => [...prev, result.anime]);
-        setImportResults(prev => prev.filter(r => r.id !== apiItem.id));
+        setImportResults(prev => prev.filter((r: any) => r.id !== apiItem.id));
         showNotification(`${animeData.title} imported!`);
       } else {
         await loadAllData();
-        setImportResults(prev => prev.filter(r => r.id !== apiItem.id));
+        setImportResults(prev => prev.filter((r: any) => r.id !== apiItem.id));
         showNotification(`${animeData.title} imported!`);
       }
     } catch (err) { showNotification('Import failed!', 'error'); }
@@ -416,13 +422,14 @@ export default function AdminPanel() {
     }, 1500);
   };
 
-  const importSingle = async (item) => {
+  // ✅ TYPED importSingle
+  const importSingle = async (item: any) => {
     const newAnime = { title: item.title, type: item.type, status: 'Ongoing', episodes: item.episodes, score: item.score, year: item.year, genre: item.genre, studio: item.studio, image: item.image, description: item.description || '' };
     try {
       const result = await API.post('anime', newAnime);
       if (result.success && result.anime) {
         setAnimeList(prev => [...prev, result.anime]);
-        setImportResults(prev => prev.filter(r => r.id !== item.id));
+        setImportResults(prev => prev.filter((r: any) => r.id !== item.id));
         showNotification(`${item.title} imported!`);
       } else { await loadAllData(); showNotification(`${item.title} imported!`); }
     } catch (err) { showNotification('Failed!', 'error'); }
@@ -454,7 +461,7 @@ export default function AdminPanel() {
     try {
       let result;
       if (editingEpisodeId) {
-        const existingEp = episodes.find(ep => ep.id === editingEpisodeId);
+        const existingEp = episodes.find((ep: any) => ep.id === editingEpisodeId);
         if (existingEp) {
           const mergedLanguages = { ...(existingEp.languages || {}) };
           const mergedServers = { ...(existingEp.servers || {}) };
@@ -470,7 +477,7 @@ export default function AdminPanel() {
 
       if (result.success && result.episode) {
         if (editingEpisodeId) {
-          setEpisodes(prev => prev.map(ep => (ep.id === editingEpisodeId ? { ...ep, ...result.episode } : ep)));
+          setEpisodes(prev => prev.map((ep: any) => (ep.id === editingEpisodeId ? { ...ep, ...result.episode } : ep)));
           setEditingEpisodeId(null);
           showNotification('Episode updated!');
         } else {
@@ -493,7 +500,8 @@ export default function AdminPanel() {
     }
   };
 
-  const editEpisode = (ep) => {
+  // ✅ TYPED editEpisode
+  const editEpisode = (ep: any) => {
     setEditingEpisodeId(ep.id);
     const langKeys = Object.keys(ep.servers || {});
     const firstLang = langKeys.length > 0 ? langKeys[0] : 'eng';
@@ -506,15 +514,16 @@ export default function AdminPanel() {
       title: ep.title || '',
       link: link
     });
-    const anime = animeList.find(a => a.id == ep.anime_id);
+    const anime = animeList.find((a: any) => a.id == ep.anime_id);
     if (anime) setSelectedAnimeForEp(anime);
     setActiveSection('episodes');
   };
 
-  const handleLanguageChange = (langCode) => {
+  // ✅ TYPED handleLanguageChange
+  const handleLanguageChange = (langCode: string) => {
     setActiveLanguage(langCode);
     if (editingEpisodeId) {
-      const ep = episodes.find(e => e.id === editingEpisodeId);
+      const ep = episodes.find((e: any) => e.id === editingEpisodeId);
       if (ep) {
         const link = (ep.servers?.[langCode] && Object.values(ep.servers[langCode])[0]) 
                      || ep.languages?.[langCode] 
@@ -526,10 +535,11 @@ export default function AdminPanel() {
     }
   };
 
-  const deleteEpisode = async (id) => {
+  // ✅ TYPED deleteEpisode
+  const deleteEpisode = async (id: any) => {
     try {
       await API.delete('episodes', id);
-      setEpisodes(prev => prev.filter(ep => ep.id !== id));
+      setEpisodes(prev => prev.filter((ep: any) => ep.id !== id));
       if (editingEpisodeId === id) { setEditingEpisodeId(null); setEpisodeForm({ number: 1, title: '', link: '' }); }
       showNotification('Episode deleted!');
     } catch (err) { showNotification('Failed!', 'error'); }
@@ -541,7 +551,7 @@ export default function AdminPanel() {
     try {
       if (editingSchedule) {
         await API.put('schedule', { id: editingSchedule.id, ...scheduleForm });
-        setScheduleItems(prev => prev.map(s => s.id === editingSchedule.id ? { ...s, ...scheduleForm } : s));
+        setScheduleItems(prev => prev.map((s: any) => s.id === editingSchedule.id ? { ...s, ...scheduleForm } : s));
         setEditingSchedule(null); showNotification('Updated!');
         // ---- SEND LIVE NOTIFICATION ----
         fetch('/api/send-notification', {
@@ -574,13 +584,15 @@ export default function AdminPanel() {
     } catch (err) { showNotification('Failed!', 'error'); }
   };
 
-  const editScheduleItem = (item) => { 
+  // ✅ TYPED editScheduleItem
+  const editScheduleItem = (item: any) => { 
     setEditingSchedule(item); 
     setScheduleForm({ day: item.day, time: item.time, title: item.title, episode: item.episode, link: item.link, anime_id: item.anime_id }); 
     setActiveSection('schedule'); 
   };
 
-  const deleteScheduleItem = async (id) => { await API.delete('schedule', id); setScheduleItems(prev => prev.filter(s => s.id !== id)); showNotification('Deleted!'); };
+  // ✅ TYPED deleteScheduleItem
+  const deleteScheduleItem = async (id: any) => { await API.delete('schedule', id); setScheduleItems(prev => prev.filter((s: any) => s.id !== id)); showNotification('Deleted!'); };
 
   const handleAutoSchedule = async () => {
     setIsImporting(true);
@@ -603,14 +615,16 @@ export default function AdminPanel() {
     catch (err) { showNotification('Failed!', 'error'); }
   };
 
-  const toggleFeatured = async (id) => {
-    let newFeatured;
+  // ✅ TYPED toggleFeatured
+  const toggleFeatured = async (id: string) => {
+    let newFeatured: string[];
     if (featuredIds.includes(id)) { if (featuredIds.length <= 1) { showNotification('Need at least 1!', 'error'); return; } newFeatured = featuredIds.filter(fid => fid !== id); }
     else { if (featuredIds.length >= 5) { showNotification('Max 5!', 'error'); return; } newFeatured = [...featuredIds, id]; }
     setFeaturedIds(newFeatured); await API.put('featured', { ids: newFeatured });
   };
 
-  const moveFeatured = async (id, dir) => {
+  // ✅ TYPED moveFeatured
+  const moveFeatured = async (id: string, dir: string) => {
     const idx = featuredIds.indexOf(id);
     if ((dir === 'up' && idx === 0) || (dir === 'down' && idx === featuredIds.length - 1)) return;
     const newOrder = [...featuredIds];
@@ -619,8 +633,9 @@ export default function AdminPanel() {
   };
 
   // ---- Newly Added (identical to Featured) ----
-  const toggleNewlyAdded = async (id) => {
-    let updated;
+  // ✅ TYPED toggleNewlyAdded
+  const toggleNewlyAdded = async (id: string) => {
+    let updated: string[];
     if (newlyAddedIds.includes(id)) {
       updated = newlyAddedIds.filter(fid => fid !== id);
     } else {
@@ -630,7 +645,8 @@ export default function AdminPanel() {
     await API.put('newly-added', { ids: updated });
   };
 
-  const moveNewlyAdded = async (id, dir) => {
+  // ✅ TYPED moveNewlyAdded
+  const moveNewlyAdded = async (id: string, dir: string) => {
     const idx = newlyAddedIds.indexOf(id);
     if ((dir === 'up' && idx === 0) || (dir === 'down' && idx === newlyAddedIds.length - 1)) return;
     const newOrder = [...newlyAddedIds];
@@ -645,7 +661,7 @@ export default function AdminPanel() {
     try {
       if (editingNews) {
         await API.put('news', { id: editingNews.id, ...newsForm });
-        setNewsItems(prev => prev.map(n => n.id === editingNews.id ? { ...n, ...newsForm } : n));
+        setNewsItems(prev => prev.map((n: any) => n.id === editingNews.id ? { ...n, ...newsForm } : n));
         setEditingNews(null);
         showNotification('Updated!');
         // ---- SEND LIVE NOTIFICATION ----
@@ -659,7 +675,7 @@ export default function AdminPanel() {
           }),
         }).catch(() => {});
       } else { 
-        const exists = newsItems.some(n => n.title === newsForm.title && n.content === newsForm.content);
+        const exists = newsItems.some((n: any) => n.title === newsForm.title && n.content === newsForm.content);
         if (exists) { showNotification('Duplicate article!', 'error'); return; }
         const result = await API.post('news', newsForm); 
         if (result.success && result.news) {
@@ -681,11 +697,15 @@ export default function AdminPanel() {
     } catch (err) { showNotification('Failed!', 'error'); }
   };
 
-  const editNewsItem = (item) => { setEditingNews(item); setNewsForm({ title: item.title, content: item.content, image: item.image, status: item.status }); setActiveSection('news'); };
-  const deleteNewsItem = async (id) => { await API.delete('news', id); setNewsItems(prev => prev.filter(n => n.id !== id)); showNotification('Deleted!'); };
+  // ✅ TYPED editNewsItem
+  const editNewsItem = (item: any) => { setEditingNews(item); setNewsForm({ title: item.title, content: item.content, image: item.image, status: item.status }); setActiveSection('news'); };
+  
+  // ✅ TYPED deleteNewsItem
+  const deleteNewsItem = async (id: any) => { await API.delete('news', id); setNewsItems(prev => prev.filter((n: any) => n.id !== id)); showNotification('Deleted!'); };
 
-  const deleteAnime = async (id) => {
-    try { await API.delete('anime', id); setAnimeList(prev => prev.filter(a => a.id !== id)); setEpisodes(prev => prev.filter(ep => ep.anime_id != id)); if (featuredIds.includes(id)) { const nf = featuredIds.filter(fid => fid !== id); setFeaturedIds(nf); await API.put('featured', { ids: nf }); } if (newlyAddedIds.includes(id)) { const nf = newlyAddedIds.filter(fid => fid !== id); setNewlyAddedIds(nf); await API.put('newly-added', { ids: nf }); } showNotification('Deleted!'); }
+  // ✅ TYPED deleteAnime
+  const deleteAnime = async (id: any) => {
+    try { await API.delete('anime', id); setAnimeList(prev => prev.filter((a: any) => a.id !== id)); setEpisodes(prev => prev.filter((ep: any) => ep.anime_id != id)); if (featuredIds.includes(id)) { const nf = featuredIds.filter(fid => fid !== id); setFeaturedIds(nf); await API.put('featured', { ids: nf }); } if (newlyAddedIds.includes(id)) { const nf = newlyAddedIds.filter(fid => fid !== id); setNewlyAddedIds(nf); await API.put('newly-added', { ids: nf }); } showNotification('Deleted!'); }
     catch (err) { showNotification('Failed!', 'error'); }
   };
 
@@ -789,10 +809,10 @@ export default function AdminPanel() {
               <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
                 <select
                   onChange={(e) => {
-                    const anime = animeList.find(a => a.id === e.target.value);
+                    const anime = animeList.find((a: any) => a.id === e.target.value);
                     setSelectedAnimeForEp(anime);
                     if (anime && !editingEpisodeId) {
-                      const maxEp = Math.max(0, ...episodes.filter(ep => ep.anime_id == anime.id).map(ep => ep.number));
+                      const maxEp = Math.max(0, ...episodes.filter((ep: any) => ep.anime_id == anime.id).map((ep: any) => ep.number));
                       setEpisodeForm({ number: maxEp + 1, title: '', link: '' });
                     }
                   }}
@@ -800,7 +820,7 @@ export default function AdminPanel() {
                   className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white mb-4"
                 >
                   <option value="">Choose anime...</option>
-                  {animeList.map(a => <option key={a.id} value={a.id}>{a.title} [{a.type}]</option>)}
+                  {animeList.map((a: any) => <option key={a.id} value={a.id}>{a.title} [{a.type}]</option>)}
                 </select>
                 {selectedAnimeForEp && (
                   <div className="space-y-4">
@@ -812,7 +832,7 @@ export default function AdminPanel() {
                     <div>
                       <label className="text-[10px] text-white/30">Language</label>
                       <div className="flex gap-1.5 flex-wrap mb-3">
-                        {getUniqueLanguages().map((lang) => (
+                        {getUniqueLanguages().map((lang: any) => (
                           <button 
                             key={lang.code} 
                             onClick={() => handleLanguageChange(lang.code)}
@@ -842,8 +862,8 @@ export default function AdminPanel() {
               </div>
               {selectedAnimeForEp && (
                 <div className="rounded-2xl border border-white/5 overflow-hidden" style={{ background: 'rgba(255,255,255,0.01)' }}>
-                  <div className="p-4 border-b border-white/5"><h3 className="text-sm font-bold text-white">Episodes ({episodes.filter(ep => ep.anime_id == selectedAnimeForEp?.id).length})</h3></div>
-                  {episodes.filter(ep => ep.anime_id == selectedAnimeForEp?.id).sort((a,b) => a.number - b.number).map((ep) => (
+                  <div className="p-4 border-b border-white/5"><h3 className="text-sm font-bold text-white">Episodes ({episodes.filter((ep: any) => ep.anime_id == selectedAnimeForEp?.id).length})</h3></div>
+                  {episodes.filter((ep: any) => ep.anime_id == selectedAnimeForEp?.id).sort((a: any, b: any) => a.number - b.number).map((ep: any) => (
                     <div key={ep.id} className="flex items-center gap-4 p-4 border-b border-white/5 hover:bg-white/[0.01]">
                       <div className="w-12 h-8 rounded-lg flex items-center justify-center text-sm font-black text-white bg-purple-500/30">#{ep.number}</div>
                       <div className="flex-1 min-w-0">
@@ -878,7 +898,7 @@ export default function AdminPanel() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                   <div><label className="text-[10px] text-white/30">Day</label><select value={scheduleForm.day} onChange={(e) => setScheduleForm({...scheduleForm, day: parseInt(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1">{DAYS.map((d,i)=><option key={i} value={i}>{d}</option>)}</select></div>
                   <div><label className="text-[10px] text-white/30">Time</label><input type="time" value={scheduleForm.time} onChange={(e) => setScheduleForm({...scheduleForm, time: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
-                  <div><label className="text-[10px] text-white/30">Anime</label><select value={scheduleForm.anime_id || ''} onChange={(e) => { const id = e.target.value ? parseInt(e.target.value) : null; const anime = id ? animeList.find(a => a.id === id) : null; setScheduleForm({...scheduleForm, anime_id: id, title: anime ? anime.title : ''}); }} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1"><option value="">Manual title</option>{animeList.map(a=><option key={a.id} value={a.id}>{a.title}</option>)}</select></div>
+                  <div><label className="text-[10px] text-white/30">Anime</label><select value={scheduleForm.anime_id || ''} onChange={(e) => { const id = e.target.value ? parseInt(e.target.value) : null; const anime = id ? animeList.find((a: any) => a.id === id) : null; setScheduleForm({...scheduleForm, anime_id: id, title: anime ? anime.title : ''}); }} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1"><option value="">Manual title</option>{animeList.map((a: any)=><option key={a.id} value={a.id}>{a.title}</option>)}</select></div>
                   <div><label className="text-[10px] text-white/30">Ep #</label><input type="number" value={scheduleForm.episode} onChange={(e) => setScheduleForm({...scheduleForm, episode: parseInt(e.target.value)||1})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
                   <div className="md:col-span-2"><label className="text-[10px] text-white/30">Title</label><input type="text" value={scheduleForm.title} onChange={(e) => setScheduleForm({...scheduleForm, title: e.target.value})} disabled={!!scheduleForm.anime_id} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1 disabled:opacity-50" /></div>
                   <div className="md:col-span-2"><label className="text-[10px] text-white/30">Link</label><input type="text" value={scheduleForm.link} onChange={(e) => setScheduleForm({...scheduleForm, link: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
@@ -889,9 +909,9 @@ export default function AdminPanel() {
                 <div className="p-4 border-b border-white/5 flex justify-between"><h3 className="text-sm font-bold text-white">Weekly ({scheduleItems.length})</h3>{scheduleItems.length > 0 && <button onClick={clearAllSchedule} className="text-[10px] text-red-400">Clear All</button>}</div>
                 {scheduleItems.length === 0 ? <div className="p-12 text-center text-white/20"><Calendar className="w-12 h-12 mx-auto mb-3 opacity-30"/><p>No schedule</p></div> :
                   DAYS.map((day, i) => {
-                    const items = scheduleItems.filter(s => s.day === i).sort((a,b) => a.time.localeCompare(b.time));
+                    const items = scheduleItems.filter((s: any) => s.day === i).sort((a: any, b: any) => a.time.localeCompare(b.time));
                     if (!items.length) return null;
-                    return (<div key={i}><div className="px-4 py-2 text-xs font-bold text-cyan-400 border-b border-white/5 bg-cyan-500/5">{day} ({items.length})</div>{items.map(item => { const linked = item.anime_id ? animeList.find(a => a.id === item.anime_id) : null; return (<div key={item.id} className="flex items-center gap-3 p-3 border-b border-white/5 group">{linked ? <div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${linked.image})`}}/> : <div className="w-10 h-14 rounded-lg flex items-center justify-center shrink-0 bg-cyan-500/20"><Tv className="w-5 h-5 text-cyan-400"/></div>}<span className="text-xs text-white/60 w-12 font-bold">{item.time}</span><div className="flex-1"><p className="text-sm text-white font-bold truncate">{linked ? linked.title : item.title}</p><p className="text-xs text-white/30">Ep {item.episode}{linked && <span className="ml-2 text-cyan-400">★{linked.score}</span>}</p></div><div className="flex gap-1 opacity-0 group-hover:opacity-100"><button onClick={()=>editScheduleItem(item)} className="p-1.5 text-white/30 hover:text-blue-400"><Edit className="w-4 h-4"/></button><button onClick={()=>deleteScheduleItem(item.id)} className="p-1.5 text-white/30 hover:text-red-400"><Trash2 className="w-4 h-4"/></button></div></div>)})}</div>)})}
+                    return (<div key={i}><div className="px-4 py-2 text-xs font-bold text-cyan-400 border-b border-white/5 bg-cyan-500/5">{day} ({items.length})</div>{items.map((item: any) => { const linked = item.anime_id ? animeList.find((a: any) => a.id === item.anime_id) : null; return (<div key={item.id} className="flex items-center gap-3 p-3 border-b border-white/5 group">{linked ? <div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${linked.image})`}}/> : <div className="w-10 h-14 rounded-lg flex items-center justify-center shrink-0 bg-cyan-500/20"><Tv className="w-5 h-5 text-cyan-400"/></div>}<span className="text-xs text-white/60 w-12 font-bold">{item.time}</span><div className="flex-1"><p className="text-sm text-white font-bold truncate">{linked ? linked.title : item.title}</p><p className="text-xs text-white/30">Ep {item.episode}{linked && <span className="ml-2 text-cyan-400">★{linked.score}</span>}</p></div><div className="flex gap-1 opacity-0 group-hover:opacity-100"><button onClick={()=>editScheduleItem(item)} className="p-1.5 text-white/30 hover:text-blue-400"><Edit className="w-4 h-4"/></button><button onClick={()=>deleteScheduleItem(item.id)} className="p-1.5 text-white/30 hover:text-red-400"><Trash2 className="w-4 h-4"/></button></div></div>)})}</div>)})}
               </div>
             </div>
           )}
@@ -902,10 +922,10 @@ export default function AdminPanel() {
               <div><h2 className="text-xl font-black text-white">Featured Slider</h2><p className="text-white/30 text-xs mt-1">Select 1-5 anime for homepage</p></div>
               <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-                  {animeList.map(anime=>{const isFeat=featuredIds.includes(anime.id);return(<button key={anime.id} onClick={()=>toggleFeatured(anime.id)} className={`rounded-2xl overflow-hidden border-2 transition-all ${isFeat?'border-amber-500':'border-transparent hover:border-white/10'}`}><div className="aspect-[3/4] bg-cover bg-center relative" style={{backgroundImage:`url(${anime.image})`}}><div className="absolute inset-0 bg-gradient-to-t from-black/80"/>{isFeat&&<div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center"><Star className="w-4 h-4 text-white fill-current"/></div>}<div className="absolute bottom-3 left-3 right-3"><p className="text-xs font-black text-white line-clamp-1">{anime.title}</p><p className="text-[10px] text-white/50">{anime.type} • ★{anime.score}</p></div></div></button>)})}
+                  {animeList.map((anime: any) => {const isFeat=featuredIds.includes(anime.id);return(<button key={anime.id} onClick={()=>toggleFeatured(anime.id)} className={`rounded-2xl overflow-hidden border-2 transition-all ${isFeat?'border-amber-500':'border-transparent hover:border-white/10'}`}><div className="aspect-[3/4] bg-cover bg-center relative" style={{backgroundImage:`url(${anime.image})`}}><div className="absolute inset-0 bg-gradient-to-t from-black/80"/>{isFeat&&<div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center"><Star className="w-4 h-4 text-white fill-current"/></div>}<div className="absolute bottom-3 left-3 right-3"><p className="text-xs font-black text-white line-clamp-1">{anime.title}</p><p className="text-[10px] text-white/50">{anime.type} • ★{anime.score}</p></div></div></button>)})}
                 </div>
                 <div className="border-t border-white/5 pt-4"><h3 className="text-sm font-bold text-white mb-3">Order ({featuredIds.length}/5)</h3>
-                  {featuredIds.map((id,idx)=>{const anime=animeList.find(a=>a.id===id);if(!anime)return null;return(<div key={id} className="flex items-center gap-3 p-3 rounded-xl border border-white/5"><span className="text-lg font-black text-amber-500 w-8">#{idx+1}</span><div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${anime.image})`}}/><div className="flex-1"><p className="text-sm text-white">{anime.title}</p></div><div className="flex gap-1"><button onClick={()=>moveFeatured(id,'up')} disabled={idx===0} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowLeft className="w-4 h-4 rotate-90"/></button><button onClick={()=>moveFeatured(id,'down')} disabled={idx===featuredIds.length-1} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowRight className="w-4 h-4 rotate-90"/></button><button onClick={()=>toggleFeatured(id)} className="p-1.5 text-white/30 hover:text-red-400"><X className="w-4 h-4"/></button></div></div>)})}
+                  {featuredIds.map((id,idx)=>{const anime=animeList.find((a: any)=>a.id===id);if(!anime)return null;return(<div key={id} className="flex items-center gap-3 p-3 rounded-xl border border-white/5"><span className="text-lg font-black text-amber-500 w-8">#{idx+1}</span><div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${anime.image})`}}/><div className="flex-1"><p className="text-sm text-white">{anime.title}</p></div><div className="flex gap-1"><button onClick={()=>moveFeatured(id,'up')} disabled={idx===0} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowLeft className="w-4 h-4 rotate-90"/></button><button onClick={()=>moveFeatured(id,'down')} disabled={idx===featuredIds.length-1} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowRight className="w-4 h-4 rotate-90"/></button><button onClick={()=>toggleFeatured(id)} className="p-1.5 text-white/30 hover:text-red-400"><X className="w-4 h-4"/></button></div></div>)})}
                 </div>
               </div>
             </div>
@@ -917,11 +937,11 @@ export default function AdminPanel() {
               <div><h2 className="text-xl font-black text-white">Newly Added</h2><p className="text-white/30 text-xs mt-1">Select anime to show in the Newly Added section (no limit)</p></div>
               <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-                  {animeList.map(anime=>{const isAdded=newlyAddedIds.includes(anime.id);return(<button key={anime.id} onClick={()=>toggleNewlyAdded(anime.id)} className={`rounded-2xl overflow-hidden border-2 transition-all ${isAdded?'border-emerald-500':'border-transparent hover:border-white/10'}`}><div className="aspect-[3/4] bg-cover bg-center relative" style={{backgroundImage:`url(${anime.image})`}}><div className="absolute inset-0 bg-gradient-to-t from-black/80"/>{isAdded&&<div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center"><Check className="w-4 h-4 text-white"/></div>}<div className="absolute bottom-3 left-3 right-3"><p className="text-xs font-black text-white line-clamp-1">{anime.title}</p><p className="text-[10px] text-white/50">{anime.type} • ★{anime.score}</p></div></div></button>)})}
+                  {animeList.map((anime: any) => {const isAdded=newlyAddedIds.includes(anime.id);return(<button key={anime.id} onClick={()=>toggleNewlyAdded(anime.id)} className={`rounded-2xl overflow-hidden border-2 transition-all ${isAdded?'border-emerald-500':'border-transparent hover:border-white/10'}`}><div className="aspect-[3/4] bg-cover bg-center relative" style={{backgroundImage:`url(${anime.image})`}}><div className="absolute inset-0 bg-gradient-to-t from-black/80"/>{isAdded&&<div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center"><Check className="w-4 h-4 text-white"/></div>}<div className="absolute bottom-3 left-3 right-3"><p className="text-xs font-black text-white line-clamp-1">{anime.title}</p><p className="text-[10px] text-white/50">{anime.type} • ★{anime.score}</p></div></div></button>)})}
                 </div>
                 <div className="border-t border-white/5 pt-4"><h3 className="text-sm font-bold text-white mb-3">Order ({newlyAddedIds.length})</h3>
                   {newlyAddedIds.length === 0 ? <p className="text-xs text-zinc-500">No anime selected yet.</p> :
-                    newlyAddedIds.map((id,idx)=>{const anime=animeList.find(a=>a.id===id);if(!anime)return null;return(<div key={id} className="flex items-center gap-3 p-3 rounded-xl border border-white/5"><span className="text-lg font-black text-emerald-500 w-8">#{idx+1}</span><div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${anime.image})`}}/><div className="flex-1"><p className="text-sm text-white">{anime.title}</p></div><div className="flex gap-1"><button onClick={()=>moveNewlyAdded(id,'up')} disabled={idx===0} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowLeft className="w-4 h-4 rotate-90"/></button><button onClick={()=>moveNewlyAdded(id,'down')} disabled={idx===newlyAddedIds.length-1} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowRight className="w-4 h-4 rotate-90"/></button><button onClick={()=>toggleNewlyAdded(id)} className="p-1.5 text-white/30 hover:text-red-400"><X className="w-4 h-4"/></button></div></div>)})}
+                    newlyAddedIds.map((id,idx)=>{const anime=animeList.find((a: any)=>a.id===id);if(!anime)return null;return(<div key={id} className="flex items-center gap-3 p-3 rounded-xl border border-white/5"><span className="text-lg font-black text-emerald-500 w-8">#{idx+1}</span><div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${anime.image})`}}/><div className="flex-1"><p className="text-sm text-white">{anime.title}</p></div><div className="flex gap-1"><button onClick={()=>moveNewlyAdded(id,'up')} disabled={idx===0} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowLeft className="w-4 h-4 rotate-90"/></button><button onClick={()=>moveNewlyAdded(id,'down')} disabled={idx===newlyAddedIds.length-1} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowRight className="w-4 h-4 rotate-90"/></button><button onClick={()=>toggleNewlyAdded(id)} className="p-1.5 text-white/30 hover:text-red-400"><X className="w-4 h-4"/></button></div></div>)})}
                 </div>
               </div>
             </div>
@@ -935,12 +955,12 @@ export default function AdminPanel() {
                 <div className="space-y-4 mb-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="text-[10px] text-white/30">Title</label><input type="text" value={newsForm.title} onChange={(e)=>setNewsForm({...newsForm,title:e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1"/></div><div><label className="text-[10px] text-white/30">Image URL</label><input type="text" value={newsForm.image} onChange={(e)=>setNewsForm({...newsForm,image:e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1"/></div></div>
                   <div><label className="text-[10px] text-white/30">Content</label><textarea rows={4} value={newsForm.content} onChange={(e)=>setNewsForm({...newsForm,content:e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1 resize-none"/></div>
-                  <div><label className="text-[10px] text-white/30">Status</label><div className="flex gap-2 mt-1">{['draft','published'].map(s=>(<button key={s} onClick={()=>setNewsForm({...newsForm,status:s})} className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${newsForm.status===s?'text-white':'text-white/40'}`} style={newsForm.status===s?{background:s==='published'?'rgba(16,185,129,0.3)':'rgba(245,158,11,0.3)'}:{}}>{s}</button>))}</div></div>
+                  <div><label className="text-[10px] text-white/30">Status</label><div className="flex gap-2 mt-1">{['draft','published'].map((s: any)=>(<button key={s} onClick={()=>setNewsForm({...newsForm,status:s})} className={`px-4 py-2 rounded-xl text-xs font-bold capitalize ${newsForm.status===s?'text-white':'text-white/40'}`} style={newsForm.status===s?{background:s==='published'?'rgba(16,185,129,0.3)':'rgba(245,158,11,0.3)'}:{}}>{s}</button>))}</div></div>
                 </div>
                 <div className="flex gap-2"><button onClick={saveNews} className="px-5 py-2.5 rounded-xl text-white font-bold text-xs" style={{background:'linear-gradient(135deg,#10b981,#059669)'}}>{editingNews?'Update':'Publish'}</button>{editingNews&&<button onClick={()=>{setEditingNews(null);setNewsForm({title:'',content:'',image:'',status:'draft'});}} className="px-5 py-2.5 rounded-xl text-white/50 text-xs bg-white/5">Cancel</button>}</div>
               </div>
               <div className="space-y-3">
-                {newsItems.length > 0 ? newsItems.map(item=>(<div key={item.id} className="rounded-2xl border border-white/5 p-5" style={{background:'rgba(255,255,255,0.02)'}}><div className="flex justify-between mb-3"><div><h4 className="text-sm font-bold text-white">{item.title}</h4><p className="text-xs text-white/30">{item.date} • {item.author}</p></div><span className={`px-3 py-1 rounded-full text-[10px] font-bold ${item.status==='published'?'bg-emerald-500/20 text-emerald-400':'bg-amber-500/20 text-amber-400'}`}>{item.status}</span></div><p className="text-xs text-white/50 line-clamp-2">{item.content}</p><div className="flex gap-2 mt-4"><button onClick={()=>editNewsItem(item)} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white/5 text-white/60 hover:text-white">Edit</button><button onClick={()=>deleteNewsItem(item.id)} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-red-500/10 text-red-400">Delete</button></div></div>)) : <div className="text-center py-8 text-white/30">No news articles yet.</div>}
+                {newsItems.length > 0 ? newsItems.map((item: any)=>(<div key={item.id} className="rounded-2xl border border-white/5 p-5" style={{background:'rgba(255,255,255,0.02)'}}><div className="flex justify-between mb-3"><div><h4 className="text-sm font-bold text-white">{item.title}</h4><p className="text-xs text-white/30">{item.date} • {item.author}</p></div><span className={`px-3 py-1 rounded-full text-[10px] font-bold ${item.status==='published'?'bg-emerald-500/20 text-emerald-400':'bg-amber-500/20 text-amber-400'}`}>{item.status}</span></div><p className="text-xs text-white/50 line-clamp-2">{item.content}</p><div className="flex gap-2 mt-4"><button onClick={()=>editNewsItem(item)} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white/5 text-white/60 hover:text-white">Edit</button><button onClick={()=>deleteNewsItem(item.id)} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-red-500/10 text-red-400">Delete</button></div></div>)) : <div className="text-center py-8 text-white/30">No news articles yet.</div>}
               </div>
             </div>
           )}
@@ -972,7 +992,7 @@ export default function AdminPanel() {
               )}
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {displayLanguages.map(lang => (
+                {displayLanguages.map((lang: any) => (
                   <div key={lang.code} className="rounded-2xl border border-white/5 p-4 flex items-center gap-3 group relative" style={{background:'rgba(255,255,255,0.02)'}}>
                     <span className="text-2xl">{lang.flag || '🏳️'}</span>
                     <div className="flex-1 min-w-0">
@@ -994,7 +1014,7 @@ export default function AdminPanel() {
             <div className="space-y-6">
               <div className="flex justify-between flex-wrap gap-3"><div><h2 className="text-xl font-black text-white">All Content</h2><p className="text-white/30 text-xs mt-1">{animeList.length} anime • {episodes.length} episodes</p></div><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20"/><input type="text" placeholder="Search..." value={searchAnime} onChange={(e)=>setSearchAnime(e.target.value)} className="bg-black/30 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white w-48"/></div></div>
               {animeList.length===0?<div className="text-center py-16 text-white/30"><Film className="w-16 h-16 mx-auto mb-4 opacity-30"/><p>No anime yet.</p></div>:
-                animeList.filter(a=>a.title.toLowerCase().includes(searchAnime.toLowerCase())).map(anime=>{const eps=episodes.filter(ep=>ep.anime_id == anime.id);const isFeat=featuredIds.includes(anime.id);return(<div key={anime.id} className="rounded-2xl border border-white/5 overflow-hidden" style={{background:'rgba(255,255,255,0.01)'}}><div className="flex items-center gap-4 p-4 border-b border-white/5" style={{background:'rgba(255,255,255,0.02)'}}><div className="w-12 h-16 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${anime.image})`}}/><div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><p className="text-sm font-bold text-white">{anime.title}</p><span className="px-2 py-0.5 rounded text-[9px] font-bold bg-purple-500/20 text-purple-400">{anime.type}</span><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${anime.status==='Completed'?'bg-emerald-500/20 text-emerald-400':'bg-blue-500/20 text-blue-400'}`}>{anime.status}</span>{isFeat&&<span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400">★</span>}</div><p className="text-xs text-white/30 mt-0.5">{anime.genre} • ★{anime.score}</p></div><span className="text-xs text-white/20">{eps.length} ep</span><div className="flex gap-1"><button onClick={()=>openEditAnime(anime)} className="p-2 text-white/30 hover:text-blue-400"><Edit className="w-4 h-4"/></button><button onClick={()=>deleteAnime(anime.id)} className="p-2 text-white/30 hover:text-red-400"><Trash2 className="w-4 h-4"/></button></div></div>{eps.length>0&&<div className="p-3"><div className="flex gap-2 flex-wrap">{eps.sort((a,b)=>a.number-b.number).map(ep=>(<div key={ep.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border border-white/5" style={{background:'rgba(255,255,255,0.02)'}}><span className="font-bold text-white/70">#{ep.number}</span><span className="text-white/30">{ep.title||'Untitled'}</span>{Object.keys(ep.languages||{}).map(l=><span key={l} className="text-[9px] text-white/20 bg-white/5 px-1 rounded">{l.toUpperCase()}</span>)}<button onClick={()=>deleteEpisode(ep.id)} className="text-white/15 hover:text-red-400"><X className="w-3 h-3"/></button></div>))}</div></div>}</div>)})}
+                animeList.filter((a: any)=>a.title.toLowerCase().includes(searchAnime.toLowerCase())).map((anime: any)=>{const eps=episodes.filter((ep: any)=>ep.anime_id == anime.id);const isFeat=featuredIds.includes(anime.id);return(<div key={anime.id} className="rounded-2xl border border-white/5 overflow-hidden" style={{background:'rgba(255,255,255,0.01)'}}><div className="flex items-center gap-4 p-4 border-b border-white/5" style={{background:'rgba(255,255,255,0.02)'}}><div className="w-12 h-16 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${anime.image})`}}/><div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><p className="text-sm font-bold text-white">{anime.title}</p><span className="px-2 py-0.5 rounded text-[9px] font-bold bg-purple-500/20 text-purple-400">{anime.type}</span><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${anime.status==='Completed'?'bg-emerald-500/20 text-emerald-400':'bg-blue-500/20 text-blue-400'}`}>{anime.status}</span>{isFeat&&<span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400">★</span>}</div><p className="text-xs text-white/30 mt-0.5">{anime.genre} • ★{anime.score}</p></div><span className="text-xs text-white/20">{eps.length} ep</span><div className="flex gap-1"><button onClick={()=>openEditAnime(anime)} className="p-2 text-white/30 hover:text-blue-400"><Edit className="w-4 h-4"/></button><button onClick={()=>deleteAnime(anime.id)} className="p-2 text-white/30 hover:text-red-400"><Trash2 className="w-4 h-4"/></button></div></div>{eps.length>0&&<div className="p-3"><div className="flex gap-2 flex-wrap">{eps.sort((a: any, b: any)=>a.number-b.number).map((ep: any)=>(<div key={ep.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border border-white/5" style={{background:'rgba(255,255,255,0.02)'}}><span className="font-bold text-white/70">#{ep.number}</span><span className="text-white/30">{ep.title||'Untitled'}</span>{Object.keys(ep.languages||{}).map((l: any)=><span key={l} className="text-[9px] text-white/20 bg-white/5 px-1 rounded">{l.toUpperCase()}</span>)}<button onClick={()=>deleteEpisode(ep.id)} className="text-white/15 hover:text-red-400"><X className="w-3 h-3"/></button></div>))}</div></div>}</div>)})}
             </div>
           )}
 
@@ -1029,7 +1049,7 @@ export default function AdminPanel() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {reports.map((report) => (
+                  {reports.map((report: any) => (
                     <div
                       key={report.id}
                       className="rounded-2xl border border-red-500/10 p-5"
@@ -1109,7 +1129,7 @@ export default function AdminPanel() {
                 <div><label className="text-xs text-white/50">Score</label><input type="number" step="0.1" value={editAnimeForm.score || 0} onChange={e => setEditAnimeForm({...editAnimeForm, score: parseFloat(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
               </div>
               <div><label className="text-xs text-white/50">Year</label><input type="text" value={editAnimeForm.year || ''} onChange={e => setEditAnimeForm({...editAnimeForm, year: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
-              <div><label className="text-xs text-white/50">Genre</label><select multiple value={(editAnimeForm.genre || '').split(', ').filter(Boolean)} onChange={e => { const selected = Array.from(e.target.selectedOptions, o => o.value); setEditAnimeForm({...editAnimeForm, genre: selected.join(', ')}); }} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1 h-32">{ALL_GENRES.map(g => <option key={g} value={g}>{g}</option>)}</select><p className="text-[9px] text-white/30 mt-1">Ctrl+Click to select multiple</p></div>
+              <div><label className="text-xs text-white/50">Genre</label><select multiple value={(editAnimeForm.genre || '').split(', ').filter(Boolean)} onChange={e => { const selected = Array.from(e.target.selectedOptions, (o: any) => o.value); setEditAnimeForm({...editAnimeForm, genre: selected.join(', ')}); }} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1 h-32">{ALL_GENRES.map(g => <option key={g} value={g}>{g}</option>)}</select><p className="text-[9px] text-white/30 mt-1">Ctrl+Click to select multiple</p></div>
               <div><label className="text-xs text-white/50">Studio</label><input type="text" value={editAnimeForm.studio || ''} onChange={e => setEditAnimeForm({...editAnimeForm, studio: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
               <div><label className="text-xs text-white/50">Image URL</label><input type="text" value={editAnimeForm.image || ''} onChange={e => setEditAnimeForm({...editAnimeForm, image: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
               <div><label className="text-xs text-white/50">Description</label><textarea rows={3} value={editAnimeForm.description || ''} onChange={e => setEditAnimeForm({...editAnimeForm, description: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1 resize-none" /></div>

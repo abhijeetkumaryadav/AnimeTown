@@ -31,10 +31,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'No tokens' });
     }
 
-    // ✅ Use sendEachForMulticast (the correct method in firebase-admin v10+)
+    // Use webpush for platform‑specific options (image, icon)
     const response = await getMessaging().sendEachForMulticast({
       tokens,
-      notification: { title, body, image: icon },
+      webpush: {
+        notification: {
+          title,
+          body,
+          icon: icon,
+          image: icon,   // some browsers prefer this for a large image
+        },
+      },
     });
 
     return NextResponse.json({ success: true, response });
