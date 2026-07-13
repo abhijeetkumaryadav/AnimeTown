@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>FCM Token Auto‑Saver</title>
+</head>
+<body>
+  <h2>FCM Token Auto‑Saver</h2>
+  <p>This page will automatically request permission, generate a token, and save it to Firestore.</p>
+  <p id="status">Initialising...</p>
+
+  <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-messaging-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    // Your Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyDm_UhHtks4FRM_C_Jeqeko6TIoOBrdpg0",
+      authDomain: "animetown-1fce4.firebaseapp.com",
+      projectId: "animetown-1fce4",
+      storageBucket: "animetown-1fce4.firebasestorage.app",
+      messagingSenderId: "790702206296",
+      appId: "1:790702206296:web:75324ff2d45bb6b97e892d"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
+    const db = firebase.firestore();
+
+    const VAPID_KEY = "BC58JJD5ZvclJeWkzcCe_C-3TUD8S5-S56YXrwYePTDQJhznj72hWk3YrxRQpLLQk5t9VWU7abQ2-a8TyxWDCbY";
+
+    async function run() {
+      const status = document.getElementById('status');
+      try {
+        // 1. Clear old service workers
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (let reg of registrations) await reg.unregister();
+
+        // 2. Register the messaging SW
+        const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        await navigator.serviceWorker.ready;
+
+        // 3. Request permission
+        status.textContent = 'Requesting notification permission...';
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          status.textContent = '❌ Permission denied. Please allow notifications and reload.';
+          return;
+        }
+
+        // 4. Get token
+        status.textContent = 'Generating token...';
+        const token = await messaging.getToken({
+          vapidKey: VAPID_KEY,
+          serviceWorkerRegistration: registration
+        });
+
+        if (!token) {
+          status.textContent = '❌ No token returned.';
+          return;
+        }
+
+        // 5. Save to Firestore
+        status.textContent = 'Saving to Firestore...';
+        await db.collection('fcm_tokens').doc('anonymous').set({
+          token: token,
+          updatedAt: new Date()
+        }, { merge: true });
+
+        status.textContent = `✅ SUCCESS! Token saved. Admin push notifications are now ready.\nToken: ${token}`;
+      } catch (err) {
+        status.textContent = `❌ ERROR: ${err.message}\n${err.stack}`;
+      }
+    }
+
+    run();
+  </script>
+</body>
+</html>
