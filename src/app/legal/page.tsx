@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Shield, FileText, AlertTriangle,
@@ -18,9 +18,9 @@ interface LegalPageProps {
 }
 
 // ============================================================
-// COMPONENT
+// CONTENT COMPONENT (uses useSearchParams)
 // ============================================================
-export default function LegalPage({
+function LegalPageContent({
   navigateTo,
   initialTab = 'privacy',
 }: LegalPageProps) {
@@ -391,5 +391,16 @@ export default function LegalPage({
         )}
       </main>
     </div>
+  );
+}
+
+// ============================================================
+// EXPORT – Wrapped in Suspense for static generation
+// ============================================================
+export default function LegalPage(props: LegalPageProps) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0a0a0e] flex items-center justify-center text-zinc-400 text-sm">Loading legal information…</div>}>
+      <LegalPageContent {...props} />
+    </Suspense>
   );
 }
