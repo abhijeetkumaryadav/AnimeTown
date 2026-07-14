@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>FCM Token Test</title>
+</head>
+<body>
+  <h2>FCM Token Test</h2>
+  <button id="getTokenBtn">Get FCM Token</button>
+  <pre id="output" style="white-space: pre-wrap; background: #f4f4f4; padding: 1rem;"></pre>
+
+  <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-messaging-compat.js"></script>
+
+  <script>
+    // Your exact Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyDm_UhHtks4FRM_C_Jeqeko6TIoOBrdpg0",
+      authDomain: "animetown-1fce4.firebaseapp.com",
+      projectId: "animetown-1fce4",
+      storageBucket: "animetown-1fce4.firebasestorage.app",
+      messagingSenderId: "790702206296",
+      appId: "1:790702206296:web:75324ff2d45bb6b97e892d"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
+
+    // Your active VAPID key
+    const VAPID_KEY = "BC58JJD5ZvclJeWkzcCe_C-3TUD8S5-S56YXrwYePTDQJhznj72hWk3YrxRQpLLQk5t9VWU7abQ2-a8TyxWDCbY";
+
+    document.getElementById('getTokenBtn').addEventListener('click', async () => {
+      const output = document.getElementById('output');
+      output.textContent = "";
+
+      try {
+        // 1. Clear old service workers
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (let reg of registrations) {
+          await reg.unregister();
+        }
+        output.textContent += "Old service workers cleared.\n";
+
+        // 2. Register the messaging service worker
+        const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        output.textContent += "Service worker registered.\n";
+
+        // 3. Wait until active
+        await navigator.serviceWorker.ready;
+        output.textContent += "Service worker is active.\n";
+
+        // 4. Request notification permission
+        const permission = await Notification.requestPermission();
+        output.textContent += `Notification permission: ${permission}\n`;
+        if (permission !== 'granted') {
+          output.textContent += "❌ Permission denied.\n";
+          return;
+        }
+
+        // 5. Get FCM token
+        output.textContent += "Getting token...\n";
+        const currentToken = await messaging.getToken({
+          vapidKey: VAPID_KEY,
+          serviceWorkerRegistration: registration
+        });
+
+        if (currentToken) {
+          output.textContent += `✅ TOKEN:\n${currentToken}\n`;
+        } else {
+          output.textContent += "❌ No token returned.\n";
+        }
+      } catch (err) {
+        output.textContent += `❌ ERROR:\n${err.message}\n${err.stack}\n`;
+        console.error("FCM error:", err);
+      }
+    });
+  </script>
+</body>
+</html>

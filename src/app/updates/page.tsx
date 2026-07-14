@@ -368,7 +368,7 @@ export default function UpdatesPage({
   // ---- News Detail View ----
   if (selectedNews) {
     return (
-      <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-red-600 flex flex-col">
+      <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-amber-500 flex flex-col">
         <main className="flex-1 w-full max-w-4xl mx-auto px-4 md:px-8 py-6 space-y-6 pb-24 md:pb-12">
           <button onClick={handleBackFromNews} className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group">
             <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
@@ -398,19 +398,19 @@ export default function UpdatesPage({
 
   // ---- Main Updates Page ----
   return (
-    <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-red-600 flex flex-col">
+    <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-amber-500 flex flex-col">
       {/* PERMISSION BANNER */}
       {showPermissionBanner && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white px-4 py-3 flex items-center justify-between shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-black px-4 py-3 flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-2 text-xs md:text-sm font-bold">
             <BellRing className="w-4 h-4" />
             Enable notifications to get alerts when anime air!
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={requestNotificationPermission} className="bg-white text-red-600 text-[10px] md:text-xs font-bold px-3 py-1 rounded-lg hover:bg-red-50 transition-colors">
+            <button onClick={requestNotificationPermission} className="bg-black text-amber-400 text-[10px] md:text-xs font-bold px-3 py-1 rounded-lg hover:bg-zinc-900 transition-colors">
               Enable
             </button>
-            <button onClick={() => setShowPermissionBanner(false)} className="text-white/70 hover:text-white text-lg">×</button>
+            <button onClick={() => setShowPermissionBanner(false)} className="text-black/70 hover:text-black text-lg">×</button>
           </div>
         </div>
       )}
@@ -424,7 +424,7 @@ export default function UpdatesPage({
               onClick={() => setActiveView('schedule')}
               className={`pb-2.5 -mb-2.5 flex items-center gap-1.5 transition-colors ${
                 activeView === 'schedule'
-                  ? "text-red-500 border-b-2 border-red-600 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+                  ? "text-amber-500 border-b-2 border-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]"
                   : "text-zinc-500 hover:text-zinc-300"
               }`}
             >
@@ -434,7 +434,7 @@ export default function UpdatesPage({
               onClick={() => setActiveView('latest')}
               className={`pb-2.5 -mb-2.5 flex items-center gap-1.5 transition-colors ${
                 activeView === 'latest'
-                  ? "text-red-500 border-b-2 border-red-600 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+                  ? "text-amber-500 border-b-2 border-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]"
                   : "text-zinc-500 hover:text-zinc-300"
               }`}
             >
@@ -468,9 +468,9 @@ export default function UpdatesPage({
                     onClick={() => setActiveDay(idx)}
                     className={`flex-1 min-w-[62px] md:min-w-[100px] p-2.5 rounded-xl md:rounded-2xl flex flex-col items-center justify-center border transition-all relative ${
                       isSelected
-                        ? "bg-red-600 border-red-600 text-white shadow-lg shadow-red-600/15"
+                        ? "bg-amber-500 border-amber-500 text-black shadow-lg shadow-amber-500/15"
                         : isToday
-                          ? "bg-red-950/20 border-red-900/40 text-red-400"
+                          ? "bg-amber-900/20 border-amber-800/40 text-amber-400"
                           : "bg-[#0b0b10] border-zinc-900 text-zinc-400 hover:border-zinc-800"
                     }`}
                   >
@@ -482,7 +482,7 @@ export default function UpdatesPage({
                     </span>
                     {dayCount > 0 && (
                       <span className={`text-[8px] font-bold mt-1 px-1.5 py-0.5 rounded-full ${
-                        isSelected ? 'bg-white/20 text-white' : 'bg-zinc-800 text-zinc-400'
+                        isSelected ? 'bg-black/20 text-black' : 'bg-zinc-800 text-zinc-400'
                       }`}>
                         {dayCount}
                       </span>
@@ -497,13 +497,13 @@ export default function UpdatesPage({
               <div className="lg:col-span-2 space-y-4">
                 <div className="flex justify-between items-center px-1">
                   <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-red-500" /> {DAYS[activeDay]}'s Airing Pipeline
+                    <Clock className="w-3.5 h-3.5 text-amber-500" /> {DAYS[activeDay]}'s Airing Pipeline
                   </h3>
                   {notifiedList.length > 0 && (
                     <button
                       onClick={() => setShowNotified(!showNotified)}
                       className={`text-[10px] font-bold flex items-center gap-1 px-2 py-1 rounded-lg transition-colors ${
-                        showNotified ? 'bg-red-600/20 text-red-400' : 'text-zinc-500 hover:text-red-400'
+                        showNotified ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-amber-400'
                       }`}
                     >
                       <BellRing className="w-3 h-3" />
@@ -529,11 +529,11 @@ export default function UpdatesPage({
                       return (
                         <div key={item.id} className="relative group flex items-start gap-4 bg-[#0b0b10] border border-zinc-900 p-3 rounded-xl md:rounded-2xl hover:border-zinc-800/80 transition-all">
                           <div className={`absolute -left-[21px] top-5 w-2.5 h-2.5 rounded-full border-2 bg-[#040406] z-10 ${
-                            isNotified ? "border-red-500 ring-4 ring-red-600/10 animate-pulse" : "border-zinc-800"
+                            isNotified ? "border-amber-500 ring-4 ring-amber-500/10 animate-pulse" : "border-zinc-800"
                           }`} />
 
                           <div className="w-16 md:w-20 shrink-0 pt-1">
-                            <p className={`text-[11px] md:text-xs font-black ${isNotified ? "text-red-500" : "text-zinc-400"}`}>
+                            <p className={`text-[11px] md:text-xs font-black ${isNotified ? "text-amber-400" : "text-zinc-400"}`}>
                               {item.time}
                             </p>
                             <p className="text-[8px] text-zinc-600 font-bold mt-0.5">
@@ -561,17 +561,17 @@ export default function UpdatesPage({
                             className="flex-1 min-w-0 pr-10 space-y-1 cursor-pointer"
                             onClick={() => openWatch(item.anime_id, item.episode)}
                           >
-                            <h4 className="text-[11px] md:text-sm font-bold text-zinc-200 group-hover:text-red-500 transition-colors truncate leading-tight">
+                            <h4 className="text-[11px] md:text-sm font-bold text-zinc-200 group-hover:text-amber-400 transition-colors truncate leading-tight">
                               {item.title || anime?.title || 'Unknown'}
                             </h4>
                             <div className="flex flex-wrap items-center gap-2 text-[9px] md:text-[10px] font-bold">
                               <span className="text-zinc-400">Episode {item.episode}</span>
                               <span className="text-zinc-600">•</span>
-                              <span className="text-red-500/90 bg-red-950/20 border border-red-900/30 px-1.5 py-0.5 rounded text-[8px]">
+                              <span className="text-amber-500/90 bg-amber-900/20 border border-amber-800/30 px-1.5 py-0.5 rounded text-[8px]">
                                 {anime?.type || 'TV Series'}
                               </span>
                               {isNotified && (
-                                <span className="text-red-400 bg-red-950/30 border border-red-900/30 px-1.5 py-0.5 rounded text-[8px] flex items-center gap-1">
+                                <span className="text-amber-400 bg-amber-900/30 border border-amber-800/30 px-1.5 py-0.5 rounded text-[8px] flex items-center gap-1">
                                   <BellRing className="w-2 h-2" /> Alert set
                                 </span>
                               )}
@@ -582,8 +582,8 @@ export default function UpdatesPage({
                             onClick={(e) => { e.stopPropagation(); toggleNotification(item.id); }}
                             className={`absolute right-3 top-4 p-1.5 rounded-lg transition-all ${
                               isNotified
-                                ? "text-red-500 bg-red-950/20 hover:bg-red-950/40"
-                                : "text-zinc-600 hover:text-red-400 hover:bg-zinc-900"
+                                ? "text-amber-400 bg-amber-900/20 hover:bg-amber-900/40"
+                                : "text-zinc-600 hover:text-amber-400 hover:bg-zinc-900"
                             }`}
                             title={isNotified ? "Remove notification alert" : "Set notification alert"}
                           >
@@ -627,17 +627,17 @@ export default function UpdatesPage({
                               />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h4 className="text-xs font-bold text-zinc-200 truncate group-hover:text-red-400 transition-colors">
+                              <h4 className="text-xs font-bold text-zinc-200 truncate group-hover:text-amber-400 transition-colors">
                                 {item.title || anime?.title || 'Unknown'}
                               </h4>
                               <div className="flex items-center gap-2 text-[10px] font-bold">
                                 <span className="text-zinc-500">{DAYS_SHORT[item.day]} {item.time}</span>
                                 <span className="text-zinc-600">•</span>
                                 <span className="text-zinc-500">Ep {item.episode}</span>
-                                {isNotified && <BellRing className="w-3 h-3 text-red-500" />}
+                                {isNotified && <BellRing className="w-3 h-3 text-amber-500" />}
                               </div>
                             </div>
-                            <Play className="w-4 h-4 text-zinc-500 group-hover:text-red-400 transition-colors" />
+                            <Play className="w-4 h-4 text-zinc-500 group-hover:text-amber-400 transition-colors" />
                           </div>
                         );
                       })
@@ -646,21 +646,21 @@ export default function UpdatesPage({
                 </div>
 
                 <div className="bg-[#0b0b10] border border-zinc-900 p-4 rounded-xl md:rounded-2xl flex items-start gap-3 text-[10px] md:text-xs text-zinc-500 leading-relaxed">
-                  <Info className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                   <div className="space-y-2">
                     <p>
-                      Click the <span className="text-zinc-400 font-semibold">Bell icon</span> to receive a browser notification <span className="text-red-400 font-semibold">5 minutes before</span> the episode airs.
+                      Click the <span className="text-zinc-400 font-semibold">Bell icon</span> to receive a browser notification <span className="text-amber-400 font-semibold">5 minutes before</span> the episode airs.
                     </p>
                     {notificationPermission === 'denied' && (
-                      <div className="bg-red-950/20 border border-red-900/30 rounded-lg p-2">
-                        <p className="text-red-400 font-bold text-[9px] flex items-center gap-1">
+                      <div className="bg-amber-900/20 border border-amber-800/30 rounded-lg p-2">
+                        <p className="text-amber-400 font-bold text-[9px] flex items-center gap-1">
                           <BellOff className="w-2.5 h-2.5" /> Notifications are blocked. Enable them in your browser settings.
                         </p>
                       </div>
                     )}
                     {notifiedList.length > 0 && (
-                      <div className="bg-red-950/20 border border-red-900/30 rounded-lg p-2">
-                        <p className="text-red-400 font-bold text-[9px] flex items-center gap-1">
+                      <div className="bg-amber-900/20 border border-amber-800/30 rounded-lg p-2">
+                        <p className="text-amber-400 font-bold text-[9px] flex items-center gap-1">
                           <BellRing className="w-2.5 h-2.5" /> {notifiedList.length} alert{notifiedList.length > 1 ? 's' : ''} scheduled
                         </p>
                       </div>
@@ -699,10 +699,10 @@ export default function UpdatesPage({
                     />
                   </div>
                   <div className="relative z-20 p-6 md:p-10 max-w-2xl space-y-3">
-                    <span className="inline-flex items-center gap-1 bg-red-600 text-white text-[9px] font-black px-2.5 py-1 rounded-md tracking-wider uppercase">
+                    <span className="inline-flex items-center gap-1 bg-amber-500 text-black text-[9px] font-black px-2.5 py-1 rounded-md tracking-wider uppercase">
                       <TrendingUp className="w-3 h-3" /> Featured News
                     </span>
-                    <h2 className="text-xl md:text-3xl font-black text-white leading-tight group-hover:text-red-400 transition-colors">
+                    <h2 className="text-xl md:text-3xl font-black text-white leading-tight group-hover:text-amber-400 transition-colors">
                       {featuredNews.title}
                     </h2>
                     <p className="text-xs md:text-sm text-zinc-400 line-clamp-2 leading-relaxed">
@@ -720,7 +720,7 @@ export default function UpdatesPage({
             <div className="space-y-4">
               <div className="flex justify-between items-center px-1">
                 <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                  <Newspaper className="w-3.5 h-3.5 text-red-500" /> Latest News
+                  <Newspaper className="w-3.5 h-3.5 text-amber-500" /> Latest News
                 </h3>
                 <span className="text-[10px] font-bold text-zinc-500">{latestNews.length} articles</span>
               </div>
@@ -749,7 +749,7 @@ export default function UpdatesPage({
                   {latestNews.map((news) => (
                     <div
                       key={news.id}
-                      className="bg-[#0b0b10] border border-zinc-900 rounded-xl md:rounded-2xl overflow-hidden group hover:border-red-500/20 transition-all cursor-pointer"
+                      className="bg-[#0b0b10] border border-zinc-900 rounded-xl md:rounded-2xl overflow-hidden group hover:border-amber-500/20 transition-all cursor-pointer"
                       onClick={() => handleNewsClick(news)}
                     >
                       {news.image && (
@@ -759,15 +759,15 @@ export default function UpdatesPage({
                             alt={news.title}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
-                          <div className="absolute top-2 left-2 bg-red-600 text-[8px] font-black px-1.5 py-0.5 rounded text-white uppercase">News</div>
+                          <div className="absolute top-2 left-2 bg-amber-500 text-black text-[8px] font-black px-1.5 py-0.5 rounded uppercase">News</div>
                         </div>
                       )}
                       <div className="p-4 space-y-2">
-                        <h4 className="text-xs md:text-sm font-bold text-zinc-200 group-hover:text-red-400 transition-colors line-clamp-2 leading-snug">{news.title}</h4>
+                        <h4 className="text-xs md:text-sm font-bold text-zinc-200 group-hover:text-amber-400 transition-colors line-clamp-2 leading-snug">{news.title}</h4>
                         <p className="text-[10px] md:text-xs text-zinc-500 line-clamp-2 leading-relaxed">{news.content?.substring(0, 120)}...</p>
                         <div className="flex items-center justify-between text-[9px] text-zinc-600 pt-1 border-t border-zinc-900/50">
                           <span>{news.date || 'Just now'}</span>
-                          <span className="text-red-500 font-bold flex items-center gap-1">Read more <ChevronRight className="w-3 h-3" /></span>
+                          <span className="text-amber-500 font-bold flex items-center gap-1">Read more <ChevronRight className="w-3 h-3" /></span>
                         </div>
                       </div>
                     </div>

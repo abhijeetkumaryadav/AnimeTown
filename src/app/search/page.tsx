@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useLayoutEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
 import { 
   Search, X, ChevronDown, Flame, Star, ChevronLeft, ChevronRight,
   Bookmark, Play
@@ -33,7 +33,7 @@ interface Episode {
 }
 
 // ============================================================
-// CACHE HELPERS (client‑side only)
+// CACHE HELPERS
 // ============================================================
 const SEARCH_CACHE_KEY = 'searchDataCache';
 
@@ -83,11 +83,10 @@ function AnimeCard({ anime, isMobile = false, watchlistItems, onToggleWatchlist,
   return (
     <div
       onClick={() => onOpenWatch(anime)}
-      className={`group cursor-pointer bg-[#0d0d14] border border-zinc-900/80 rounded-xl overflow-hidden hover:border-red-500/20 transition-all shadow-sm ${isMobile ? 'p-2 space-y-1.5' : 'p-2.5 space-y-2'}`}
+      className={`group cursor-pointer bg-[#0d0d14] border border-zinc-900/80 rounded-xl overflow-hidden hover:border-amber-500/20 transition-all shadow-sm ${isMobile ? 'p-2 space-y-1.5' : 'p-2.5 space-y-2'}`}
     >
       <div className="relative aspect-[3/4] bg-zinc-900 rounded-lg overflow-hidden">
         <img src={anime.image} alt={anime.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-        <span className="absolute top-2 left-2 bg-red-600 text-[7px] font-black px-1.5 py-0.5 rounded text-white tracking-wider">{anime.type}</span>
         <button 
           onClick={(e) => { e.stopPropagation(); onToggleWatchlist(anime); }} 
           className="absolute top-2 right-2 p-1 bg-black/60 rounded-full text-white/70 hover:text-yellow-400 transition-colors z-10"
@@ -98,28 +97,28 @@ function AnimeCard({ anime, isMobile = false, watchlistItems, onToggleWatchlist,
           <Star className="w-2.5 h-2.5 fill-current text-amber-400" /> {anime.score || '?'}
         </div>
         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-          <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center hover:bg-red-500 transition-colors cursor-pointer">
-            <Play className="w-3.5 h-3.5 text-white fill-current ml-0.5" />
+          <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center hover:bg-amber-600 transition-colors cursor-pointer">
+            <Play className="w-3.5 h-3.5 text-black fill-current ml-0.5" />
           </div>
         </div>
       </div>
       <div className="px-0.5">
-        <h3 className={`font-bold text-zinc-200 line-clamp-2 group-hover:text-red-400 transition-colors leading-tight ${isMobile ? 'text-[10px] min-h-[28px]' : 'text-xs min-h-[32px]'}`}>{anime.title}</h3>
+        <h3 className={`font-bold text-zinc-200 line-clamp-2 group-hover:text-amber-400 transition-colors leading-tight ${isMobile ? 'text-[10px] min-h-[28px]' : 'text-xs min-h-[32px]'}`}>{anime.title}</h3>
         <p className={`text-zinc-500 font-medium pt-0.5 ${isMobile ? 'text-[8px]' : 'text-[10px]'}`}>{anime.episodes} Episodes • {anime.year}</p>
       </div>
     </div>
   );
 }
 
-function Pagination({ currentPage, totalPages, onPageChange }: any) {
+function Pagination({ currentPage, totalPages, onPageChange, className = '' }: any) {
   if (totalPages <= 1) return null;
   
   return (
-    <div className="flex items-center justify-center gap-2 pt-4">
+    <div className={`flex items-center justify-center gap-2 pt-4 ${className}`}>
       <button
         onClick={() => onPageChange(Math.max(1, currentPage - 1))}
         disabled={currentPage === 1}
-        className="flex items-center gap-1.5 text-zinc-500 hover:text-red-400 transition-colors text-[11px] font-bold px-3 py-1.5 rounded-lg hover:bg-zinc-900 disabled:opacity-40"
+        className="flex items-center gap-1.5 text-zinc-500 hover:text-amber-400 transition-colors text-[11px] font-bold px-3 py-1.5 rounded-lg hover:bg-zinc-900 disabled:opacity-40"
       >
         <ChevronLeft className="w-3.5 h-3.5" /> Prev
       </button>
@@ -129,7 +128,7 @@ function Pagination({ currentPage, totalPages, onPageChange }: any) {
       <button
         onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
         disabled={currentPage === totalPages}
-        className="flex items-center gap-1.5 text-zinc-400 hover:text-red-400 transition-colors text-[11px] font-bold px-3 py-1.5 rounded-lg hover:bg-zinc-900 disabled:opacity-40"
+        className="flex items-center gap-1.5 text-zinc-400 hover:text-amber-400 transition-colors text-[11px] font-bold px-3 py-1.5 rounded-lg hover:bg-zinc-900 disabled:opacity-40"
       >
         Next <ChevronRight className="w-3.5 h-3.5" />
       </button>
@@ -137,9 +136,6 @@ function Pagination({ currentPage, totalPages, onPageChange }: any) {
   );
 }
 
-// ============================================================
-// SKELETON LOADING COMPONENTS
-// ============================================================
 function SkeletonCard() {
   return (
     <div className="group cursor-pointer bg-[#0d0d14] border border-zinc-900/80 rounded-xl overflow-hidden p-2.5 space-y-2 animate-pulse">
@@ -168,7 +164,7 @@ export default function SearchPage({
 }) {
   const { user, selectedLanguage, loading: authLoading } = useApp();
 
-  // ---- Data states (always start empty to match server render) ----
+  // ---- Data states ----
   const [animeList, setAnimeList] = useState<Anime[]>([]);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [watchlistItems, setWatchlistItems] = useState<any[]>([]);
@@ -181,9 +177,16 @@ export default function SearchPage({
   const [showGenreDropdown, setShowGenreDropdown] = useState(false);
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
+  const itemsPerPage = 18;   // <-- changed from 12 to 18
 
-  // ---- Instant cache load before paint (prevents skeleton flash) ----
+  // ---- Mobile‑specific state ----
+  const [mobilePage, setMobilePage] = useState(1);
+
+  // ---- Refs for outside click & scrolling ----
+  const genreDropdownRef = useRef<HTMLDivElement>(null);
+  const mobileContentRef = useRef<HTMLDivElement>(null);
+
+  // ---- Instant cache load ----
   useLayoutEffect(() => {
     const cachedSearch = getCachedSearchData();
     if (cachedSearch) {
@@ -201,7 +204,7 @@ export default function SearchPage({
     }
   }, [user]);
 
-  // ---- Load anime & episodes from API (background refresh) ----
+  // ---- Load anime & episodes from API ----
   useEffect(() => {
     const fetchData = async () => {
       setDataLoading(true);
@@ -223,7 +226,7 @@ export default function SearchPage({
     fetchData();
   }, []);
 
-  // ---- Load user's watchlist from Supabase ----
+  // ---- Load user's watchlist ----
   useEffect(() => {
     if (!user) {
       setWatchlistItems([]);
@@ -256,6 +259,30 @@ export default function SearchPage({
     loadWatchlist();
   }, [user, animeList]);
 
+  // ---- Outside click handler for genre dropdown ----
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        genreDropdownRef.current &&
+        !genreDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowGenreDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // ---- Scroll to top when page changes (desktop & mobile) ----
+  useEffect(() => {
+    // Desktop: scroll window to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Mobile: scroll inner container to top
+    if (mobileContentRef.current) {
+      mobileContentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [currentPage, mobilePage]);
+
   // ---- Language filtering ----
   const languageFilteredAnime = useMemo(() => {
     if (selectedLanguage === 'all') return animeList;
@@ -270,16 +297,12 @@ export default function SearchPage({
 
   const displayAnime = languageFilteredAnime;
 
-  // ---- Derived types from display data ----
-  const types = useMemo(() => {
-    return ['All', ...new Set(displayAnime.map(a => a.type).filter(Boolean))];
-  }, [displayAnime]);
-
+  // ---- Derived data ----
   const allGenres = useMemo(() => {
     return [...new Set(displayAnime.flatMap(a => (a.genre || '').split(',').map(g => g.trim())).filter(Boolean))].sort();
   }, [displayAnime]);
 
-  // ---- Filter & sort logic ----
+  // ---- Desktop filtering & sorting ----
   const typeFiltered = useMemo(() => {
     return activeType === 'All' ? displayAnime : displayAnime.filter(a => a.type === activeType);
   }, [displayAnime, activeType]);
@@ -310,20 +333,29 @@ export default function SearchPage({
   const pagedItems = sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const isSearching = searchQuery.trim() !== '';
+
+  // ---- Category lists for mobile first-page rows (ALL items) ----
+  const topResultsAnime = useMemo(() => {
+    return [...displayAnime].sort((a, b) => (b.views || 0) - (a.views || 0));
+  }, [displayAnime]);
+
   const tvSeriesAnime = useMemo(() => {
-    return (isSearching ? searchFiltered : displayAnime).filter(a => a.type === 'TV' || a.type === 'TV Series');
-  }, [isSearching, searchFiltered, displayAnime]);
+    return displayAnime.filter(a => a.type === 'TV' || a.type === 'TV Series');
+  }, [displayAnime]);
 
   const moviesAnime = useMemo(() => {
-    return (isSearching ? searchFiltered : displayAnime).filter(a => a.type === 'Movie');
-  }, [isSearching, searchFiltered, displayAnime]);
+    return displayAnime.filter(a => a.type === 'Movie');
+  }, [displayAnime]);
 
-  const topResultsAnime = useMemo(() => {
-    if (isSearching) return searchFiltered.slice(0, 8);
-    return [...displayAnime].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 8);
-  }, [isSearching, searchFiltered, displayAnime]);
+  // ---- Mobile filtered results (for paged grid on page 2+) ----
+  const mobileFiltered = useMemo(() => {
+    return sorted;
+  }, [sorted]);
 
-  const clearSearch = () => { setSearchQuery(''); setCurrentPage(1); };
+  const mobileTotalPages = Math.ceil(mobileFiltered.length / itemsPerPage);
+  const mobilePagedItems = mobileFiltered.slice((mobilePage - 1) * itemsPerPage, mobilePage * itemsPerPage);
+
+  const clearSearch = () => { setSearchQuery(''); setCurrentPage(1); setMobilePage(1); };
 
   // ---- Handlers ----
   const toggleWatchlist = useCallback(async (anime: any) => {
@@ -352,70 +384,98 @@ export default function SearchPage({
     }
   }, [navigateTo]);
 
-  // ---- Determine if we should show skeletons ----
+  const handleTypeChange = (type: string) => {
+    setActiveType(type);
+    setCurrentPage(1);
+    setMobilePage(1);
+  };
+
+  const handleGenreChange = (genre: string) => {
+    setSelectedGenre(genre);
+    setShowGenreDropdown(false);
+    setCurrentPage(1);
+    setMobilePage(1);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+    setMobilePage(1);
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const handleMobilePageChange = (page: number) => {
+    setMobilePage(page);
+  };
+
+  // ---- Determine if we should show first‑page rows (mobile) ----
+  const showMobileFirstPageRows = !isSearching && mobilePage === 1 && activeType === 'All' && selectedGenre === 'All';
+
+  // ---- Skeleton detection ----
   const showSkeleton = dataLoading && !animeList.length;
 
-  // ---- Render ----
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <>
-      {/* ============================================================ */}
-      {/* DESKTOP VIEW */}
-      {/* ============================================================ */}
+      {/* ==================== DESKTOP VIEW ==================== */}
       <div className="hidden md:flex flex-col flex-1">
         <main className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-8 space-y-8">
-          
           {/* Search Header */}
           <div className="space-y-4 bg-[#0d0d14] p-6 rounded-2xl border border-zinc-900 shadow-sm">
             <div className="flex items-center gap-3">
-              <div className="flex-1 flex items-center bg-[#07070a] border border-zinc-800 rounded-xl px-4 py-3 gap-3 focus-within:border-red-500/40 transition-all">
+              <div className="flex-1 flex items-center bg-[#07070a] border border-zinc-800 rounded-xl px-4 py-3 gap-3 focus-within:border-amber-500/40 transition-all">
                 <Search className="w-4 h-4 text-zinc-500" />
                 <input 
                   type="text" 
                   value={searchQuery} 
-                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} 
+                  onChange={(e) => handleSearchChange(e.target.value)} 
                   className="bg-transparent text-sm font-medium text-zinc-200 outline-none flex-1 placeholder-zinc-600" 
-                  placeholder="Search series, movies, characters..." 
+                  placeholder="Search series, movies, characters…" 
                 />
                 {searchQuery && (
-                  <button onClick={clearSearch} className="text-zinc-500 hover:text-red-400">
+                  <button onClick={clearSearch} className="text-zinc-500 hover:text-amber-400">
                     <X className="w-4 h-4 bg-zinc-800 rounded-full p-0.5" />
                   </button>
                 )}
               </div>
-              <button className="bg-red-600 text-white p-3 rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20">
+              <button className="bg-amber-500 text-black p-3 rounded-xl hover:bg-amber-600 transition-colors shadow-lg shadow-amber-500/20">
                 <Search className="w-4 h-4" />
               </button>
             </div>
-
             {/* Filters */}
             <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-zinc-900">
               <div className="flex flex-wrap gap-1.5">
-                {types.map((cat) => (
+                {['All', 'TV', 'Movie', 'OVA', 'ONA', 'Special'].map((type) => (
                   <button 
-                    key={cat} 
-                    onClick={() => { setActiveType(cat); setCurrentPage(1); }} 
+                    key={type} 
+                    onClick={() => handleTypeChange(type)} 
                     className={`text-[11px] font-bold px-4 py-2 rounded-lg border transition-all duration-200 ${
-                      activeType === cat 
-                        ? "bg-red-600 border-red-600 text-white shadow-lg shadow-red-600/10" 
-                        : "bg-[#07070a] border-zinc-800/80 text-zinc-400 hover:border-red-500/50 hover:text-red-400"
+                      activeType === type 
+                        ? "bg-amber-500 border-amber-500 text-black shadow-lg shadow-amber-500/10" 
+                        : "bg-[#07070a] border-zinc-800/80 text-zinc-400 hover:border-amber-500/50 hover:text-amber-400"
                     }`}
                   >
-                    {cat === 'All' ? 'All' : cat === 'TV' ? 'TV Series' : cat === 'Movie' ? 'Movies' : cat}
+                    {type === 'All' ? 'All' : type}
                   </button>
                 ))}
               </div>
               <div className="flex flex-wrap gap-2">
-                <div className="relative">
+                <div className="relative" ref={genreDropdownRef}>
                   <button 
                     onClick={() => setShowGenreDropdown(!showGenreDropdown)} 
-                    className="flex items-center gap-2 bg-[#07070a] border border-zinc-800 px-4 py-2 rounded-lg text-[11px] font-bold text-zinc-400 hover:border-red-500/50 hover:text-red-400 transition-all"
+                    className="flex items-center gap-2 bg-[#07070a] border border-zinc-800 px-4 py-2 rounded-lg text-[11px] font-bold text-zinc-400 hover:border-amber-500/50 hover:text-amber-400 transition-all"
                   >
                     {selectedGenre === 'All' ? 'Genre' : selectedGenre} <ChevronDown className="w-3 h-3 text-zinc-500" />
                   </button>
                   {showGenreDropdown && (
                     <div className="absolute left-0 mt-2 w-48 bg-[#0d0d14] border border-zinc-800 rounded-xl p-2 shadow-xl z-20 max-h-60 overflow-y-auto">
                       <button 
-                        onClick={() => { setSelectedGenre('All'); setShowGenreDropdown(false); setCurrentPage(1); }} 
+                        onClick={() => handleGenreChange('All')} 
                         className="block w-full text-left px-3 py-1.5 text-xs rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-white"
                       >
                         All Genres
@@ -423,9 +483,9 @@ export default function SearchPage({
                       {allGenres.map((genre: string) => (
                         <button 
                           key={genre} 
-                          onClick={() => { setSelectedGenre(genre); setShowGenreDropdown(false); setCurrentPage(1); }} 
+                          onClick={() => handleGenreChange(genre)} 
                           className={`block w-full text-left px-3 py-1.5 text-xs rounded-lg ${
-                            selectedGenre === genre ? 'bg-red-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
+                            selectedGenre === genre ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
                           }`}
                         >
                           {genre}
@@ -436,7 +496,7 @@ export default function SearchPage({
                 </div>
                 <button 
                   onClick={() => setSortBy(sortBy === 'Popular' ? 'Score' : sortBy === 'Score' ? 'Newest' : sortBy === 'Newest' ? 'A-Z' : 'Popular')} 
-                  className="flex items-center gap-2 bg-[#07070a] border border-zinc-800 px-4 py-2 rounded-lg text-[11px] font-bold text-zinc-400 hover:border-red-500/50 hover:text-red-400 transition-all"
+                  className="flex items-center gap-2 bg-[#07070a] border border-zinc-800 px-4 py-2 rounded-lg text-[11px] font-bold text-zinc-400 hover:border-amber-500/50 hover:text-amber-400 transition-all"
                 >
                   {sortBy} <ChevronDown className="w-3 h-3 text-zinc-500" />
                 </button>
@@ -444,210 +504,200 @@ export default function SearchPage({
             </div>
           </div>
 
-          {/* Results */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
-              <div className="flex items-center gap-2">
-                <Flame className="w-4 h-4 text-red-500 fill-current" />
-                <h2 className="text-xs font-black uppercase tracking-wider text-zinc-400">
-                  Results {activeType !== 'All' && `in ${activeType}`}
-                </h2>
-              </div>
-              <span className="text-[11px] font-bold text-zinc-500">{sorted.length} anime</span>
+          {/* Results Grid (no heading) */}
+          {showSkeleton ? (
+            <SkeletonGrid />
+          ) : pagedItems.length === 0 ? (
+            <div className="text-center py-16 text-zinc-500">
+              {isSearching ? `No results for "${searchQuery}"` : 'No anime found.'}
             </div>
-
-            {showSkeleton ? (
-              <SkeletonGrid />
-            ) : pagedItems.length === 0 ? (
-              <div className="text-center py-16 text-zinc-500">
-                {isSearching ? `No results for "${searchQuery}"` : 'No anime found.'}
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+                {pagedItems.map((anime: any) => (
+                  <AnimeCard 
+                    key={anime.id} 
+                    anime={anime} 
+                    watchlistItems={watchlistItems}
+                    onToggleWatchlist={toggleWatchlist}
+                    onOpenWatch={openWatch}
+                  />
+                ))}
               </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
-                  {pagedItems.map((anime: any) => (
-                    <AnimeCard 
-                      key={anime.id} 
-                      anime={anime} 
-                      watchlistItems={watchlistItems}
-                      onToggleWatchlist={toggleWatchlist}
-                      onOpenWatch={openWatch}
-                    />
-                  ))}
-                </div>
-                <Pagination 
-                  currentPage={currentPage} 
-                  totalPages={totalPages} 
-                  onPageChange={setCurrentPage} 
-                />
-              </>
-            )}
-          </div>
+              <Pagination 
+                currentPage={currentPage} 
+                totalPages={totalPages} 
+                onPageChange={handlePageChange} 
+              />
+            </>
+          )}
         </main>
       </div>
 
-      {/* ============================================================ */}
-      {/* MOBILE VIEW */}
-      {/* ============================================================ */}
+      {/* ==================== MOBILE VIEW ==================== */}
       <div className="block md:hidden flex-1 flex flex-col">
-        {/* Mobile Search Header */}
-        <div className="px-4 py-2 space-y-3 bg-[#07070a] border-b border-zinc-900/40">
-          <div className="flex items-center gap-3">
-            <div className="flex-1 flex items-center bg-[#0d0d12] border border-zinc-800 rounded-xl px-3 py-2.5 gap-2.5 focus-within:border-red-500/40 transition-all">
+        {/* Search Bar */}
+        <div className="px-4 py-2 bg-[#07070a] border-b border-zinc-900/40">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 flex items-center bg-[#0d0d12] border border-zinc-800 rounded-xl px-3 py-2.5 gap-2.5 focus-within:border-amber-500/40 transition-all">
               <Search className="w-4 h-4 text-zinc-500" />
               <input 
                 type="text" 
                 value={searchQuery} 
-                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} 
+                onChange={(e) => handleSearchChange(e.target.value)} 
                 className="bg-transparent text-xs font-medium text-zinc-200 outline-none flex-1 placeholder-zinc-600" 
-                placeholder="Search anime..." 
+                placeholder="Search…" 
               />
               {searchQuery && (
-                <button onClick={clearSearch} className="text-zinc-500 hover:text-red-400">
+                <button onClick={clearSearch} className="text-zinc-500 hover:text-amber-400">
                   <X className="w-3.5 h-3.5 bg-zinc-800 rounded-full p-0.5" />
                 </button>
               )}
             </div>
           </div>
 
-          <div className="overflow-x-auto flex gap-1.5 scrollbar-none py-0.5">
-            {types.map((cat) => (
-              <button 
-                key={cat} 
-                onClick={() => { setActiveType(cat); setCurrentPage(1); }} 
-                className={`text-[10px] font-bold px-3.5 py-1.5 rounded-lg border transition-all duration-200 whitespace-nowrap ${
-                  activeType === cat 
-                    ? "bg-red-600 border-red-600 text-white shadow-[0_0_6px_rgba(239,68,68,0.3)]" 
-                    : "bg-[#0d0d12] border-zinc-900 text-zinc-400 hover:border-red-500/50 hover:text-red-400"
+          {/* Mobile filter chips – type only */}
+          <div className="mt-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1">
+            {['All', 'TV', 'Movie', 'OVA', 'ONA', 'Special'].map((type) => (
+              <button
+                key={type}
+                onClick={() => handleTypeChange(type)}
+                className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border transition-all duration-200 whitespace-nowrap ${
+                  activeType === type
+                    ? "bg-amber-500 border-amber-500 text-black shadow-[0_0_6px_rgba(245,158,11,0.3)]"
+                    : "bg-[#0d0d12] border-zinc-900 text-zinc-400 hover:border-amber-500/50 hover:text-amber-400"
                 }`}
               >
-                {cat === 'All' ? 'All' : cat === 'TV' ? 'TV' : cat === 'Movie' ? 'Movies' : cat}
+                {type === 'All' ? 'All' : type}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Mobile Results */}
-        <main className="flex-1 overflow-y-auto pb-24 space-y-6 pt-2 scrollbar-none">
-
-          {/* TOP RESULTS – only on page 1, no search, no genre filter */}
-          {!showSkeleton && !isSearching && currentPage === 1 && selectedGenre === 'All' && topResultsAnime.length > 0 && (
-            <section className="space-y-2.5">
-              <div className="px-4 flex items-center gap-1.5">
-                <Flame className="w-3.5 h-3.5 text-red-500 fill-current" />
-                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-300">
-                  Top Results
-                </h3>
-              </div>
-              <div className="overflow-x-auto px-4 flex gap-3 scrollbar-none">
-                {topResultsAnime.map((anime: any) => (
-                  <div key={anime.id} className="min-w-[120px] w-[120px] flex-shrink-0">
-                    <AnimeCard 
-                      anime={anime} 
-                      isMobile 
-                      watchlistItems={watchlistItems}
-                      onToggleWatchlist={toggleWatchlist}
-                      onOpenWatch={openWatch}
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* TV SERIES – only on page 1, no search, no genre filter */}
-          {!showSkeleton && !isSearching && currentPage === 1 && selectedGenre === 'All' && tvSeriesAnime.length > 0 && (
-            <section className="space-y-2.5">
-              <div className="px-4 flex items-center gap-1.5">
-                <span className="text-zinc-400">📺</span>
-                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-300">TV Series</h3>
-              </div>
-              <div className="overflow-x-auto px-4 flex gap-3 scrollbar-none">
-                {tvSeriesAnime.slice(0, 8).map((anime: any) => (
-                  <div key={anime.id} className="min-w-[120px] w-[120px] flex-shrink-0">
-                    <AnimeCard 
-                      anime={anime} 
-                      isMobile 
-                      watchlistItems={watchlistItems}
-                      onToggleWatchlist={toggleWatchlist}
-                      onOpenWatch={openWatch}
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* MOVIES – only on page 1, no search, no genre filter */}
-          {!showSkeleton && !isSearching && currentPage === 1 && selectedGenre === 'All' && moviesAnime.length > 0 && (
-            <section className="space-y-2.5">
-              <div className="px-4 flex items-center gap-1.5">
-                <span className="text-zinc-400">🎬</span>
-                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-300">Movies</h3>
-              </div>
-              <div className="overflow-x-auto px-4 flex gap-3 scrollbar-none">
-                {moviesAnime.slice(0, 8).map((anime: any) => (
-                  <div key={anime.id} className="min-w-[120px] w-[120px] flex-shrink-0">
-                    <AnimeCard 
-                      anime={anime} 
-                      isMobile 
-                      watchlistItems={watchlistItems}
-                      onToggleWatchlist={toggleWatchlist}
-                      onOpenWatch={openWatch}
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* ALL RESULTS */}
-          <section className="space-y-2.5">
-            <div className="px-4 flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Flame className="w-3.5 h-3.5 text-red-500 fill-current" />
-                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-300">
-                  {isSearching || currentPage > 1 || selectedGenre !== 'All' ? 'Results' : 'All Results'}
-                </h3>
-              </div>
-              <span className="text-[10px] text-zinc-500">{sorted.length} anime</span>
+        {/* ===== MOBILE CONTENT (scrollable) ===== */}
+        <main ref={mobileContentRef} className="flex-1 overflow-y-auto pb-24 scrollbar-none">
+          {showSkeleton ? (
+            <div className="px-4 pt-3 grid grid-cols-2 gap-3">
+              {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
             </div>
-            <div className="px-4 grid grid-cols-2 gap-3">
-              {showSkeleton ? (
-                [...Array(4)].map((_, i) => (
-                  <div key={i} className="bg-[#0d0d14] border border-zinc-900/80 rounded-xl p-2 space-y-1.5 animate-pulse">
-                    <div className="aspect-[3/4] bg-zinc-800 rounded-lg" />
-                    <div className="h-3 bg-zinc-800 rounded w-3/4" />
-                    <div className="h-2 bg-zinc-800 rounded w-1/2" />
+          ) : (
+            <>
+              {/* FIRST PAGE – rows only (no grid) */}
+              {showMobileFirstPageRows && (
+                <div className="space-y-6 pt-2">
+                  {/* Top Results – all items */}
+                  {topResultsAnime.length > 0 && (
+                    <section className="space-y-2.5">
+                      <div className="px-4 flex items-center gap-1.5">
+                        <Flame className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                        <h3 className="text-xs font-black uppercase tracking-wider text-zinc-300">Top Results</h3>
+                      </div>
+                      <div className="overflow-x-auto px-4 flex gap-3 scrollbar-none">
+                        {topResultsAnime.map((anime) => (
+                          <div key={anime.id} className="min-w-[120px] w-[120px] flex-shrink-0">
+                            <AnimeCard 
+                              anime={anime} 
+                              isMobile 
+                              watchlistItems={watchlistItems}
+                              onToggleWatchlist={toggleWatchlist}
+                              onOpenWatch={openWatch}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* TV Series – all items */}
+                  {tvSeriesAnime.length > 0 && (
+                    <section className="space-y-2.5">
+                      <div className="px-4 flex items-center gap-1.5">
+                        <span className="text-zinc-400">📺</span>
+                        <h3 className="text-xs font-black uppercase tracking-wider text-zinc-300">TV Series</h3>
+                      </div>
+                      <div className="overflow-x-auto px-4 flex gap-3 scrollbar-none">
+                        {tvSeriesAnime.map((anime) => (
+                          <div key={anime.id} className="min-w-[120px] w-[120px] flex-shrink-0">
+                            <AnimeCard 
+                              anime={anime} 
+                              isMobile 
+                              watchlistItems={watchlistItems}
+                              onToggleWatchlist={toggleWatchlist}
+                              onOpenWatch={openWatch}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* Movies – all items */}
+                  {moviesAnime.length > 0 && (
+                    <section className="space-y-2.5">
+                      <div className="px-4 flex items-center gap-1.5">
+                        <span className="text-zinc-400">🎬</span>
+                        <h3 className="text-xs font-black uppercase tracking-wider text-zinc-300">Movies</h3>
+                      </div>
+                      <div className="overflow-x-auto px-4 flex gap-3 scrollbar-none">
+                        {moviesAnime.map((anime) => (
+                          <div key={anime.id} className="min-w-[120px] w-[120px] flex-shrink-0">
+                            <AnimeCard 
+                              anime={anime} 
+                              isMobile 
+                              watchlistItems={watchlistItems}
+                              onToggleWatchlist={toggleWatchlist}
+                              onOpenWatch={openWatch}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* Pagination control (no grid) */}
+                  <div className="pb-6">
+                    <Pagination 
+                      currentPage={mobilePage} 
+                      totalPages={mobileTotalPages} 
+                      onPageChange={handleMobilePageChange} 
+                      className="mb-8"
+                    />
                   </div>
-                ))
-              ) : pagedItems.length === 0 ? (
-                <div className="col-span-full text-center py-10 text-zinc-500 text-sm">
-                  {isSearching ? `No results for "${searchQuery}"` : 'No results'}
                 </div>
-              ) : (
-                pagedItems.map((anime: any) => (
-                  <AnimeCard 
-                    key={anime.id} 
-                    anime={anime} 
-                    isMobile 
-                    watchlistItems={watchlistItems}
-                    onToggleWatchlist={toggleWatchlist}
-                    onOpenWatch={openWatch}
-                  />
-                ))
               )}
-            </div>
-            {!showSkeleton && (
-              <div className="px-4">
-                <Pagination 
-                  currentPage={currentPage} 
-                  totalPages={totalPages} 
-                  onPageChange={setCurrentPage} 
-                />
-              </div>
-            )}
-          </section>
+
+              {/* PAGE 2+ OR FILTERED – Grid only */}
+              {!showMobileFirstPageRows && (
+                <div className="px-4 pt-3 space-y-4 pb-6">
+                  <div className="grid grid-cols-2 gap-3">
+                    {mobilePagedItems.length === 0 ? (
+                      <div className="col-span-full text-center py-10 text-zinc-500 text-sm">
+                        No anime found.
+                      </div>
+                    ) : (
+                      mobilePagedItems.map((anime: any) => (
+                        <AnimeCard 
+                          key={anime.id} 
+                          anime={anime} 
+                          isMobile 
+                          watchlistItems={watchlistItems}
+                          onToggleWatchlist={toggleWatchlist}
+                          onOpenWatch={openWatch}
+                        />
+                      ))
+                    )}
+                  </div>
+                  <div className="mb-8">
+                    <Pagination 
+                      currentPage={mobilePage} 
+                      totalPages={mobileTotalPages} 
+                      onPageChange={handleMobilePageChange} 
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </main>
       </div>
     </>
