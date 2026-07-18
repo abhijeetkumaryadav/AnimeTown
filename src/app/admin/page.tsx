@@ -14,11 +14,12 @@ import {
   Activity, Gauge, Shield, AlertCircle, Check,
   ExternalLink, Copy, Clipboard, CheckCircle2, XCircle, AlertTriangle,
   Newspaper, Send, Database, Cloud, Server, ServerCrash,
-  Flag, Gift
+  Flag, Gift, Server as ServerIcon, LayoutDashboard
 } from 'lucide-react';
 import { combinedSearch, apiResultToAnime, getAniListTrending, getJikanTop, getJikanSeasonal, fetchAnimeNews } from '@/lib/animeApis';
+import { CloudflareAPI } from '@/lib/db-client';
 
-// ---------- FIRESTORE (for live reports) ----------
+// ---------- FIRESTORE (only for reports & FCM) ----------
 import { db } from '@/lib/firebaseClient';
 import { collection, query, orderBy, getDocs, deleteDoc, doc } from 'firebase/firestore';
 
@@ -28,10 +29,8 @@ const NAV_ITEMS = [
   { id: 'import', label: 'Import', icon: Download, color: '#f59e0b' },
   { id: 'episodes', label: 'Episodes', icon: Video, color: '#8b5cf6' },
   { id: 'schedule', label: 'Schedule', icon: Calendar, color: '#06b6d4' },
-  { id: 'featured', label: 'Featured', icon: Star, color: '#f59e0b' },
-  { id: 'newly-added', label: 'Newly Added', icon: Gift, color: '#10b981' },
+  { id: 'sliders', label: 'Sliders', icon: LayoutDashboard, color: '#8b5cf6' },
   { id: 'news', label: 'News', icon: Newspaper, color: '#10b981' },
-  { id: 'languages', label: 'Languages', icon: Globe, color: '#ef4444' },
   { id: 'content', label: 'Content', icon: FolderOpen, color: '#8b5cf6' },
 ];
 
@@ -68,43 +67,22 @@ Object.entries(LANGUAGE_DISPLAY_NAMES).forEach(([code, name]) => {
   LANGUAGE_DISPLAY_TO_CODE[name] = code;
 });
 
-const API = {
-  fetch: async (endpoint: string) => {
-    const res = await fetch(`/api/${endpoint}`);
-    return await res.json();
-  },
-  post: async (endpoint: string, body: any) => {
-    const res = await fetch(`/api/${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return await res.json();
-  },
-  put: async (endpoint: string, body: any) => {
-    const res = await fetch(`/api/${endpoint}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return await res.json();
-  },
-  delete: async (endpoint: string, id: any) => {
-    const res = await fetch(`/api/${endpoint}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    });
-    return await res.json();
-  },
-};
-
+// ============================================================
+//   HELPER FUNCTIONS
+// ============================================================
 const getLanguageDisplay = (key: string) => {
   return LANGUAGE_DISPLAY_NAMES[key] || key;
 };
 
 const getLanguageKeyFromDisplay = (displayName: string) => {
   return LANGUAGE_DISPLAY_TO_CODE[displayName] || displayName;
+};
+
+// ============================================================
+//   HELPER FOR REPORT COUNT
+// ============================================================
+const getReportCountForAnime = (animeId: string, reports: any[]) => {
+  return reports.filter(r => r.animeId === animeId).length;
 };
 
 export default function AdminPanel() {
@@ -122,21 +100,62 @@ export default function AdminPanel() {
   const [newsItems, setNewsItems] = useState<any[]>([]);
   const [featuredIds, setFeaturedIds] = useState<string[]>([]);
   const [newlyAddedIds, setNewlyAddedIds] = useState<string[]>([]);
-  const [customLanguages, setCustomLanguages] = useState<any[]>([]);
-  const [activeLanguage, setActiveLanguage] = useState<string>('');
 
   const [reports, setReports] = useState<any[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
 
-  const [importTab, setImportTab] = useState<'api' | 'manual'>('api');
+  // Import tabs
+  const [importTab, setImportTab] = useState<'api' | 'vidnest' | 'nxsha' | 'anikoto'>('api');
   const [importQuery, setImportQuery] = useState('');
   const [importResults, setImportResults] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
 
+  // Vidnest specific
+  const [vidnestQuery, setVidnestQuery] = useState('');
+  const [vidnestResults, setVidnestResults] = useState<any[]>([]);
+  const [vidnestLoading, setVidnestLoading] = useState(false);
+  const [selectedVidnestType, setSelectedVidnestType] = useState<'anime' | 'animepahe'>('anime');
+
+  // Nxsha specific
+  const [nxshaQuery, setNxshaQuery] = useState('');
+  const [nxshaResults, setNxshaResults] = useState<any[]>([]);
+  const [nxshaLoading, setNxshaLoading] = useState(false);
+  const [nxshaSeason, setNxshaSeason] = useState(1);
+  const [nxshaLanguage, setNxshaLanguage] = useState('hin');
+
+  // Anikoto specific
+  const [anikotoQuery, setAnikotoQuery] = useState('');
+  const [anikotoResults, setAnikotoResults] = useState<any[]>([]);
+  const [anikotoLoading, setAnikotoLoading] = useState(false);
+  const [anikotoLanguage, setAnikotoLanguage] = useState('sub');
+
+  // Sliders
+  const [slidersTab, setSlidersTab] = useState<'featured' | 'newlyAdded'>('featured');
+  const [sliderSearch, setSliderSearch] = useState('');
+
+  // Episode manager
   const [episodeSearch, setEpisodeSearch] = useState('');
   const [selectedAnimeForEp, setSelectedAnimeForEp] = useState<any>(null);
-  const [episodeForm, setEpisodeForm] = useState({ number: 1, title: '', link: '' });
+  const [episodeForm, setEpisodeForm] = useState({
+    number: 1,
+    title: '',
+    language: 'jap',
+    serverName: 'Server 1',
+    link: ''
+  });
   const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
+
+  const [addServerForm, setAddServerForm] = useState<{ episodeId: string | null, language: string, serverName: string, link: string }>({
+    episodeId: null,
+    language: 'jap',
+    serverName: '',
+    link: ''
+  });
+
+  const [serverManagementModal, setServerManagementModal] = useState<{
+    episode: any;
+    animeTitle: string;
+  } | null>(null);
 
   const [scheduleForm, setScheduleForm] = useState({
     day: 1,
@@ -150,10 +169,6 @@ export default function AdminPanel() {
 
   const [newsForm, setNewsForm] = useState({ title: '', content: '', image: '', status: 'draft' });
   const [editingNews, setEditingNews] = useState<any>(null);
-
-  const [showAddLang, setShowAddLang] = useState(false);
-  const [newLang, setNewLang] = useState({ name: '', type: 'SUB' });
-  const [editingLanguage, setEditingLanguage] = useState<any>(null);
 
   const [contentSearch, setContentSearch] = useState('');
   const [contentLang, setContentLang] = useState<string | null>(null);
@@ -178,7 +193,8 @@ export default function AdminPanel() {
     setLoginError('');
     setLoginLoading(true);
     try {
-      const res = await fetch('/api/check-password', {
+      // ✅ Use Cloudflare Worker endpoint
+      const res = await fetch('https://anime-cms.animetown.workers.dev/api/check-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
@@ -195,7 +211,7 @@ export default function AdminPanel() {
     setLoginLoading(false);
   };
 
-  // ==================== LOAD REPORTS ====================
+  // ==================== LOAD REPORTS (Firestore) ====================
   const loadReports = async () => {
     setReportsLoading(true);
     try {
@@ -222,18 +238,17 @@ export default function AdminPanel() {
     }
   };
 
-  // ==================== LOAD ALL DATA (auto-detect languages from episodes) ====================
+  // ==================== LOAD ALL DATA (Cloudflare) ====================
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [animeRes, episodesRes, scheduleRes, newsRes, featuredRes, newlyAddedRes, languagesRes] = await Promise.all([
-        API.fetch('anime'),
-        API.fetch('episodes'),
-        API.fetch('schedule'),
-        API.fetch('news'),
-        API.fetch('featured'),
-        API.fetch('newly-added'),
-        API.fetch('languages'),
+      const [animeRes, episodesRes, scheduleRes, newsRes, featuredRes, newlyAddedRes] = await Promise.all([
+        CloudflareAPI.getAnime(),
+        CloudflareAPI.getEpisodes(),
+        CloudflareAPI.getSchedule(),
+        CloudflareAPI.getNews(),
+        CloudflareAPI.getFeatured(),
+        CloudflareAPI.getNewlyAdded(),
       ]);
       const animeArr = Array.isArray(animeRes.anime) ? animeRes.anime : [];
       const episodeArr = Array.isArray(episodesRes.episodes) ? episodesRes.episodes : [];
@@ -243,36 +258,6 @@ export default function AdminPanel() {
       setNewsItems(Array.isArray(newsRes.news) ? newsRes.news : []);
       setFeaturedIds(Array.isArray(featuredRes.featured) ? featuredRes.featured : []);
       setNewlyAddedIds(Array.isArray(newlyAddedRes.newlyAdded) ? newlyAddedRes.newlyAdded : []);
-
-      // Base custom languages from API
-      const rawLang = Array.isArray(languagesRes.languages) ? languagesRes.languages : [];
-      const normalized = rawLang.map((l: any) => ({ name: l.name || l.code || l.id, type: l.type || 'SUB' }));
-
-      // Auto-detect languages from episodes: extract all display names used
-      const langNamesFromEpisodes = new Set<string>();
-      episodeArr.forEach((ep: any) => {
-        Object.keys(ep.languages || {}).forEach(key => {
-          const display = getLanguageDisplay(key);
-          if (display && !['dub', 'sub', 'DUB', 'SUB'].includes(display)) {
-            langNamesFromEpisodes.add(display);
-          }
-        });
-      });
-
-      // Merge detected languages into the list (only add if not already present)
-      const merged = [...normalized];
-      langNamesFromEpisodes.forEach(name => {
-        if (!merged.some(l => l.name === name)) {
-          merged.push({ name, type: 'SUB' }); // default type SUB
-        }
-      });
-
-      setCustomLanguages(merged);
-
-      // Set default active language if none selected
-      if (merged.length > 0 && !activeLanguage) {
-        setActiveLanguage(merged[0].name);
-      }
     } catch (err) {
       showNotification('Failed to load data!', 'error');
     }
@@ -315,51 +300,6 @@ export default function AdminPanel() {
     return item;
   };
 
-  // ==================== LANGUAGE OPERATIONS ====================
-  const addLanguage = async () => {
-    if (!newLang.name.trim()) {
-      showNotification('Name is required!', 'error');
-      return;
-    }
-    const exists = customLanguages.find((l: any) => l.name.toLowerCase() === newLang.name.toLowerCase());
-    if (exists) {
-      showNotification('Language already exists!', 'error');
-      return;
-    }
-    const updated = [...customLanguages, { name: newLang.name.trim(), type: newLang.type }];
-    setCustomLanguages(updated);
-    await API.put('languages', { languages: updated });
-    setNewLang({ name: '', type: 'SUB' });
-    setShowAddLang(false);
-    setEditingLanguage(null);
-    showNotification(`Language "${newLang.name}" added!`);
-  };
-
-  const updateLanguage = async () => {
-    if (!newLang.name.trim()) {
-      showNotification('Name is required!', 'error');
-      return;
-    }
-    const updated = customLanguages.map((l: any) =>
-      (l.name === editingLanguage.name && l.type === editingLanguage.type)
-        ? { name: newLang.name.trim(), type: newLang.type }
-        : l
-    );
-    setCustomLanguages(updated);
-    await API.put('languages', { languages: updated });
-    setNewLang({ name: '', type: 'SUB' });
-    setShowAddLang(false);
-    setEditingLanguage(null);
-    showNotification('Language updated!');
-  };
-
-  const removeLanguage = async (lang: any) => {
-    const updated = customLanguages.filter((l: any) => l.name !== lang.name || l.type !== lang.type);
-    setCustomLanguages(updated);
-    await API.put('languages', { languages: updated });
-    showNotification(`Language "${lang.name}" removed!`);
-  };
-
   // ==================== EDIT ANIME ====================
   const openEditAnime = (anime: any) => {
     setEditAnimeModal(anime);
@@ -368,7 +308,7 @@ export default function AdminPanel() {
 
   const saveAnimeEdit = async () => {
     try {
-      await API.put('anime', editAnimeForm);
+      await CloudflareAPI.putAnime(editAnimeForm);
       setAnimeList(prev => prev.map((a: any) => a.id === editAnimeForm.id ? { ...a, ...editAnimeForm } : a));
       setEditAnimeModal(null);
       showNotification('Anime updated!');
@@ -377,7 +317,7 @@ export default function AdminPanel() {
     }
   };
 
-  // ==================== UNIFIED IMPORT (API + MANUAL) ====================
+  // ==================== IMPORT ====================
   const handleApiSearch = async () => {
     if (!importQuery.trim()) return;
     setIsImporting(true);
@@ -440,7 +380,7 @@ export default function AdminPanel() {
       const existingTitles = new Set(newsItems.map((n: any) => n.title));
       for (const newsItem of newsResults) {
         if (existingTitles.has(newsItem.title)) continue;
-        const result = await API.post('news', {
+        const result = await CloudflareAPI.postNews({
           title: newsItem.title,
           content: newsItem.content,
           image: newsItem.image,
@@ -463,40 +403,12 @@ export default function AdminPanel() {
     setIsImporting(false);
   };
 
-  const handleManualImport = () => {
-    if (!importQuery.trim()) return;
-    setIsImporting(true);
-    setTimeout(() => {
-      setImportResults([
-        {
-          id: 'man-1', title: importQuery || "Solo Leveling", type: "TV", year: "2024", score: 9.5,
-          episodes: 12, genre: "Action, Fantasy", studio: "A-1 Pictures",
-          image: "https://images.unsplash.com/photo-1601042879364-f3947d3f9c16?w=200&q=80",
-          description: "Sung Jin-Woo becomes the Shadow Monarch.", source: 'manual',
-        },
-        {
-          id: 'man-2', title: "Kaiju No. 8", type: "TV", year: "2024", score: 8.7,
-          episodes: 12, genre: "Action, Sci-Fi", studio: "Production I.G",
-          image: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=200&q=80",
-          description: "Kafka Hibino gains kaiju powers.", source: 'manual',
-        },
-        {
-          id: 'man-3', title: "Frieren: Beyond Journey's End", type: "TV", year: "2023", score: 9.4,
-          episodes: 28, genre: "Fantasy, Drama", studio: "Madhouse",
-          image: "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=200&q=80",
-          description: "An elven mage reflects on her journey.", source: 'manual',
-        },
-      ]);
-      setIsImporting(false);
-    }, 1500);
-  };
-
   const importApiResult = async (apiItem: any) => {
     setIsImporting(true);
     const enrichedItem = await enrichWithFullSynopsis(apiItem);
     const animeData = apiResultToAnime(enrichedItem);
     try {
-      const result = await API.post('anime', animeData);
+      const result = await CloudflareAPI.postAnime(animeData);
       if (result.success && result.anime) {
         setAnimeList(prev => [...prev, result.anime]);
       } else {
@@ -516,7 +428,7 @@ export default function AdminPanel() {
     for (const item of importResults) {
       try {
         const enrichedItem = await enrichWithFullSynopsis(item);
-        await API.post('anime', apiResultToAnime(enrichedItem));
+        await CloudflareAPI.postAnime(apiResultToAnime(enrichedItem));
         count++;
       } catch (err) {}
     }
@@ -526,25 +438,455 @@ export default function AdminPanel() {
     setIsImporting(false);
   };
 
-  const importSingle = async (item: any) => {
-    const newAnime = {
-      title: item.title, type: item.type, status: 'Ongoing', episodes: item.episodes,
-      score: item.score, year: item.year, genre: item.genre, studio: item.studio,
-      image: item.image, description: item.description || '',
-    };
+  // ---------- VIDNEST IMPORT (MERGED) ----------
+  const handleVidnestSearch = async () => {
+    if (!vidnestQuery.trim()) return;
+    setVidnestLoading(true);
     try {
-      const result = await API.post('anime', newAnime);
-      if (result.success && result.anime) {
-        setAnimeList(prev => [...prev, result.anime]);
-        setImportResults(prev => prev.filter((r: any) => r.id !== item.id));
-        showNotification(`${item.title} imported!`);
+      const res = await fetch(`/api/stream-servers/vidnest?search=${encodeURIComponent(vidnestQuery)}&type=${selectedVidnestType}`);
+      const data = await res.json();
+      if (data.results) {
+        setVidnestResults(data.results);
+        showNotification(data.results.length === 0 ? 'No Vidnest results' : `Found ${data.results.length} anime on Vidnest`);
       } else {
-        await loadAllData();
-        showNotification(`${item.title} imported!`);
+        showNotification('Search failed', 'error');
       }
     } catch (err) {
-      showNotification('Failed!', 'error');
+      showNotification('Vidnest search failed', 'error');
     }
+    setVidnestLoading(false);
+  };
+
+  const importVidnestAnime = async (vnResult: any) => {
+    setIsImporting(true);
+    try {
+      const animeData = {
+        title: vnResult.title,
+        type: vnResult.type || 'TV',
+        status: vnResult.status || 'Ongoing',
+        episodes: vnResult.episodes || 0,
+        score: vnResult.score || 0,
+        year: vnResult.year?.toString() || new Date().getFullYear().toString(),
+        genre: vnResult.genre || '',
+        studio: vnResult.studio || 'Unknown',
+        image: vnResult.image || 'https://via.placeholder.com/200x300',
+        description: vnResult.description || '',
+      };
+
+      let animeId: string | null = null;
+      const existing = animeList.find((a: any) => 
+        a.title.toLowerCase() === animeData.title.toLowerCase()
+      );
+      
+      if (existing) {
+        animeId = existing.id;
+        showNotification(`Anime "${animeData.title}" already exists, adding episodes...`);
+      } else {
+        const result = await CloudflareAPI.postAnime(animeData);
+        if (result.success && result.anime) {
+          animeId = result.anime.id;
+          setAnimeList(prev => [...prev, result.anime]);
+          showNotification(`Anime "${animeData.title}" imported!`);
+        } else {
+          throw new Error('Failed to import anime');
+        }
+      }
+
+      if (!animeId) throw new Error('No anime ID');
+
+      // --- Fetch existing episodes for this anime ---
+      const allEpisodesRes = await CloudflareAPI.getEpisodes();
+      const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
+      const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
+
+      const language = 'sub';
+      const embedType = selectedVidnestType || 'anime';
+      
+      const epRes = await fetch(`/api/stream-servers/vidnest/episodes?anilistId=${vnResult.anilistId}&totalEpisodes=${vnResult.episodes || 0}&type=${embedType}&language=${language}`);
+      const epData = await epRes.json();
+      const vidEpisodes = epData.episodes || [];
+
+      if (!vidEpisodes.length) {
+        showNotification('No episodes found for this anime.', 'error');
+        setIsImporting(false);
+        return;
+      }
+
+      let added = 0;
+      const langKey = 'jap';
+      const newServerName = 'Vidnest';
+
+      for (const ep of vidEpisodes) {
+        const epNumber = ep.number;
+        const newUrl = ep.link;
+        const existingEp = existingMap.get(epNumber);
+
+        if (existingEp) {
+          // ---- MERGE into existing episode ----
+          const mergedLanguages = { ...(existingEp.languages || {}) };
+          const mergedServers = { ...(existingEp.servers || {}) };
+
+          if (!mergedLanguages[langKey] || mergedLanguages[langKey] !== newUrl) {
+            mergedLanguages[langKey] = newUrl;
+          }
+          if (!mergedServers[langKey]) {
+            mergedServers[langKey] = {};
+          }
+          mergedServers[langKey][newServerName] = newUrl;
+
+          const updateResult = await CloudflareAPI.putEpisode({
+            id: existingEp.id,
+            anime_id: animeId,
+            number: epNumber,
+            title: existingEp.title || `Episode ${epNumber}`,
+            languages: mergedLanguages,
+            servers: mergedServers,
+          });
+          if (updateResult.success) {
+            setEpisodes(prev => prev.map(e => e.id === existingEp.id ? { ...e, languages: mergedLanguages, servers: mergedServers } : e));
+            added++;
+          }
+        } else {
+          // ---- NEW episode ----
+          const epDataObj = {
+            anime_id: animeId,
+            number: epNumber,
+            title: `Episode ${epNumber}`,
+            languages: { [langKey]: newUrl },
+            servers: { [langKey]: { [newServerName]: newUrl } },
+          };
+          try {
+            const result = await CloudflareAPI.postEpisode(epDataObj);
+            if (result.success && result.episode) {
+              setEpisodes(prev => [...prev, result.episode]);
+              added++;
+            }
+          } catch (e) {
+            console.warn('Failed to add episode', epNumber, e);
+          }
+        }
+      }
+
+      await loadAllData();
+      showNotification(`Imported ${added} episodes from Vidnest for "${vnResult.title}"`);
+
+    } catch (err) {
+      showNotification('Vidnest import failed: ' + (err as Error).message, 'error');
+    }
+    setIsImporting(false);
+  };
+
+  // ---------- NXSHA IMPORT (MERGED) ----------
+  const handleNxshaAction = async () => {
+    const query = nxshaQuery.trim();
+    if (!query) return;
+
+    const isNumeric = /^\d+$/.test(query);
+    if (isNumeric) {
+      await importNxshaById(query);
+    } else {
+      await handleNxshaSearch();
+    }
+  };
+
+  const handleNxshaSearch = async () => {
+    if (!nxshaQuery.trim()) return;
+    setNxshaLoading(true);
+    try {
+      const res = await fetch(`/api/stream-servers/nxsha?search=${encodeURIComponent(nxshaQuery)}`);
+      const data = await res.json();
+      if (data.results) {
+        setNxshaResults(data.results);
+        showNotification(data.results.length === 0 ? 'No results found on Nxsha' : `Found ${data.results.length} results`);
+      } else {
+        showNotification('Search failed', 'error');
+      }
+    } catch (err) {
+      showNotification('Nxsha search failed', 'error');
+    }
+    setNxshaLoading(false);
+  };
+
+  const importNxshaAnime = async (result: any, language: string = 'hin') => {
+    setIsImporting(true);
+    try {
+      const animeData = {
+        title: result.title,
+        type: result.type || 'TV',
+        status: result.status || 'Ongoing',
+        episodes: result.episodes || 0,
+        score: result.score || 0,
+        year: result.year?.toString() || new Date().getFullYear().toString(),
+        genre: result.genre || '',
+        studio: result.studio || 'Unknown',
+        image: result.image || 'https://via.placeholder.com/200x300',
+        description: result.description || '',
+      };
+
+      let animeId: string | null = null;
+      const existing = animeList.find((a: any) => 
+        a.title.toLowerCase() === animeData.title.toLowerCase()
+      );
+      
+      if (existing) {
+        animeId = existing.id;
+        showNotification(`Anime "${animeData.title}" already exists, adding episodes...`);
+      } else {
+        const res = await CloudflareAPI.postAnime(animeData);
+        if (res.success && res.anime) {
+          animeId = res.anime.id;
+          setAnimeList(prev => [...prev, res.anime]);
+          showNotification(`Anime "${animeData.title}" imported!`);
+        } else {
+          throw new Error('Failed to import anime');
+        }
+      }
+
+      if (!animeId) throw new Error('No anime ID');
+
+      // --- Fetch existing episodes for this anime ---
+      const allEpisodesRes = await CloudflareAPI.getEpisodes();
+      const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
+      const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
+
+      const tmdbId = result.tmdbId;
+      const type = result.type === 'Movie' ? 'movie' : 'tv';
+
+      const epRes = await fetch(
+        `/api/stream-servers/nxsha/episodes?anilistId=${tmdbId}&totalEpisodes=${result.episodes || 0}&season=${nxshaSeason}&type=${type}`
+      );
+      const epData = await epRes.json();
+      const nxEpisodes = epData.episodes || [];
+
+      if (!nxEpisodes.length) {
+        showNotification(`No episodes found for TMDb ID: ${tmdbId}`, 'error');
+        setIsImporting(false);
+        return;
+      }
+
+      let added = 0;
+      const langKey = language;
+      const newServerName = 'Nxsha';
+
+      for (const ep of nxEpisodes) {
+        const epNumber = ep.number;
+        const newUrl = ep.link;
+        const existingEp = existingMap.get(epNumber);
+
+        if (existingEp) {
+          const mergedLanguages = { ...(existingEp.languages || {}) };
+          const mergedServers = { ...(existingEp.servers || {}) };
+          if (!mergedLanguages[langKey] || mergedLanguages[langKey] !== newUrl) {
+            mergedLanguages[langKey] = newUrl;
+          }
+          if (!mergedServers[langKey]) {
+            mergedServers[langKey] = {};
+          }
+          mergedServers[langKey][newServerName] = newUrl;
+
+          const updateResult = await CloudflareAPI.putEpisode({
+            id: existingEp.id,
+            anime_id: animeId,
+            number: epNumber,
+            title: existingEp.title || `Episode ${epNumber}`,
+            languages: mergedLanguages,
+            servers: mergedServers,
+          });
+          if (updateResult.success) {
+            setEpisodes(prev => prev.map(e => e.id === existingEp.id ? { ...e, languages: mergedLanguages, servers: mergedServers } : e));
+            added++;
+          }
+        } else {
+          const epDataObj = {
+            anime_id: animeId,
+            number: epNumber,
+            title: type === 'tv' ? `Season ${nxshaSeason} Episode ${epNumber}` : 'Movie',
+            languages: { [langKey]: newUrl },
+            servers: { [langKey]: { [newServerName]: newUrl } },
+          };
+          try {
+            const res = await CloudflareAPI.postEpisode(epDataObj);
+            if (res.success && res.episode) {
+              setEpisodes(prev => [...prev, res.episode]);
+              added++;
+            }
+          } catch (e) {
+            console.warn('Failed to add episode', epNumber, e);
+          }
+        }
+      }
+
+      await loadAllData();
+      showNotification(`Imported ${added} episodes from Nxsha for "${result.title}"`);
+
+    } catch (err) {
+      showNotification('Nxsha import failed: ' + (err as Error).message, 'error');
+    }
+    setIsImporting(false);
+  };
+
+  const importNxshaById = async (tmdbId: string) => {
+    if (!tmdbId) return;
+    setIsImporting(true);
+    try {
+      const result = {
+        id: `nx-${tmdbId}`,
+        tmdbId: parseInt(tmdbId),
+        title: `TMDb ID ${tmdbId}`,
+        image: 'https://via.placeholder.com/200x300',
+        description: 'Imported via TMDb ID',
+        type: 'TV',
+        episodes: 12,
+        score: 0,
+        genre: '',
+        studio: 'Unknown',
+        status: 'Ongoing',
+        year: new Date().getFullYear(),
+        source: 'nxsha'
+      };
+      await importNxshaAnime(result, nxshaLanguage);
+    } catch (err) {
+      showNotification('Failed to import by ID', 'error');
+    }
+    setIsImporting(false);
+  };
+
+  // ---------- ANIKOTO IMPORT (MERGED) ----------
+  const handleAnikotoSearch = async () => {
+    if (!anikotoQuery.trim()) return;
+    setAnikotoLoading(true);
+    try {
+      const res = await fetch(`/api/stream-servers/anikoto?search=${encodeURIComponent(anikotoQuery)}`);
+      const data = await res.json();
+      if (data.results) {
+        setAnikotoResults(data.results);
+        showNotification(data.results.length === 0 ? 'No results found' : `Found ${data.results.length} results`);
+      } else {
+        showNotification('Search failed', 'error');
+      }
+    } catch (err) {
+      showNotification('Anikoto search failed', 'error');
+    }
+    setAnikotoLoading(false);
+  };
+
+  const importAnikotoAnime = async (result: any) => {
+    setIsImporting(true);
+    try {
+      const animeData = {
+        title: result.title,
+        type: result.type || 'TV',
+        status: result.status || 'Ongoing',
+        episodes: result.episodes || 0,
+        score: result.score || 0,
+        year: result.year?.toString() || new Date().getFullYear().toString(),
+        genre: result.genre || '',
+        studio: result.studio || 'Unknown',
+        image: result.image || 'https://via.placeholder.com/200x300',
+        description: result.description || '',
+      };
+
+      let animeId: string | null = null;
+      const existing = animeList.find((a: any) => 
+        a.title.toLowerCase() === animeData.title.toLowerCase()
+      );
+      
+      if (existing) {
+        animeId = existing.id;
+        showNotification(`Anime "${animeData.title}" already exists, adding episodes...`);
+      } else {
+        const res = await CloudflareAPI.postAnime(animeData);
+        if (res.success && res.anime) {
+          animeId = res.anime.id;
+          setAnimeList(prev => [...prev, res.anime]);
+          showNotification(`Anime "${animeData.title}" imported!`);
+        } else {
+          throw new Error('Failed to import anime');
+        }
+      }
+
+      if (!animeId) throw new Error('No anime ID');
+
+      // --- Fetch existing episodes for this anime ---
+      const allEpisodesRes = await CloudflareAPI.getEpisodes();
+      const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
+      const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
+
+      const language = anikotoLanguage; // 'sub' or 'dub'
+      
+      let url = `/api/stream-servers/anikoto/episodes?anikotoId=${result.anikotoId || ''}&language=${language}`;
+      if (result.mal_id) url += `&malId=${result.mal_id}`;
+      if (result.episodes) url += `&totalEpisodes=${result.episodes}`;
+      
+      const epRes = await fetch(url);
+      const epData = await epRes.json();
+      const episodes = epData.episodes || [];
+
+      if (!episodes.length) {
+        showNotification('No episodes found for this anime.', 'error');
+        setIsImporting(false);
+        return;
+      }
+
+      let added = 0;
+      const langKey = language === 'sub' ? 'jap' : 'eng';
+      const newServerName = 'MegaPlay';
+
+      for (const ep of episodes) {
+        const epNumber = ep.number;
+        const newUrl = ep.link;
+        const existingEp = existingMap.get(epNumber);
+
+        if (existingEp) {
+          const mergedLanguages = { ...(existingEp.languages || {}) };
+          const mergedServers = { ...(existingEp.servers || {}) };
+          if (!mergedLanguages[langKey] || mergedLanguages[langKey] !== newUrl) {
+            mergedLanguages[langKey] = newUrl;
+          }
+          if (!mergedServers[langKey]) {
+            mergedServers[langKey] = {};
+          }
+          mergedServers[langKey][newServerName] = newUrl;
+
+          const updateResult = await CloudflareAPI.putEpisode({
+            id: existingEp.id,
+            anime_id: animeId,
+            number: epNumber,
+            title: existingEp.title || `Episode ${epNumber}`,
+            languages: mergedLanguages,
+            servers: mergedServers,
+          });
+          if (updateResult.success) {
+            setEpisodes(prev => prev.map(e => e.id === existingEp.id ? { ...e, languages: mergedLanguages, servers: mergedServers } : e));
+            added++;
+          }
+        } else {
+          const epDataObj = {
+            anime_id: animeId,
+            number: epNumber,
+            title: ep.title || `Episode ${epNumber}`,
+            languages: { [langKey]: newUrl },
+            servers: { [langKey]: { [newServerName]: newUrl } },
+          };
+          try {
+            const res = await CloudflareAPI.postEpisode(epDataObj);
+            if (res.success && res.episode) {
+              setEpisodes(prev => [...prev, res.episode]);
+              added++;
+            }
+          } catch (e) {
+            console.warn('Failed to add episode', epNumber, e);
+          }
+        }
+      }
+
+      await loadAllData();
+      showNotification(`Imported ${added} episodes from Anikoto/MegaPlay for "${result.title}"`);
+
+    } catch (err) {
+      showNotification('Anikoto import failed: ' + (err as Error).message, 'error');
+    }
+    setIsImporting(false);
   };
 
   // ==================== EPISODES ====================
@@ -562,8 +904,9 @@ export default function AdminPanel() {
       showNotification('Please enter a video link.', 'error');
       return;
     }
-    const langKey = activeLanguage; // now holds display name
-    const servers = { [langKey]: { "Server 1": link } };
+    const langKey = episodeForm.language || 'jap';
+    const serverName = episodeForm.serverName || 'Server 1';
+    const servers = { [langKey]: { [serverName]: link } };
     const languages = { [langKey]: link };
     const epData = {
       anime_id: selectedAnimeForEp.id,
@@ -579,14 +922,18 @@ export default function AdminPanel() {
         if (existingEp) {
           const mergedLanguages = { ...(existingEp.languages || {}) };
           const mergedServers = { ...(existingEp.servers || {}) };
+          if (mergedServers[langKey]) {
+            mergedServers[langKey][serverName] = link;
+          } else {
+            mergedServers[langKey] = { [serverName]: link };
+          }
           mergedLanguages[langKey] = link;
-          mergedServers[langKey] = { "Server 1": link };
           epData.languages = mergedLanguages;
           epData.servers = mergedServers;
         }
-        result = await API.put('episodes', { id: editingEpisodeId, ...epData });
+        result = await CloudflareAPI.putEpisode({ id: editingEpisodeId, ...epData });
       } else {
-        result = await API.post('episodes', epData);
+        result = await CloudflareAPI.postEpisode(epData);
       }
       if (result.success && result.episode) {
         if (editingEpisodeId) {
@@ -597,7 +944,7 @@ export default function AdminPanel() {
           setEpisodes(prev => [...prev, result.episode]);
           showNotification(`Episode ${epData.number} added!`);
         }
-        setEpisodeForm({ number: episodeForm.number + 1, title: '', link: '' });
+        setEpisodeForm({ number: episodeForm.number + 1, title: '', language: 'jap', serverName: 'Server 1', link: '' });
       } else {
         showNotification(`Failed to save episode: ${result.error || 'Unknown error'}`, 'error');
       }
@@ -609,11 +956,17 @@ export default function AdminPanel() {
   const editEpisode = (ep: any) => {
     setEditingEpisodeId(ep.id);
     const langKeys = Object.keys(ep.servers || {});
-    const firstLangKey = langKeys.length > 0 ? langKeys[0] : '';
-    const displayName = getLanguageDisplay(firstLangKey);
-    setActiveLanguage(displayName);
-    const link = (ep.servers?.[firstLangKey] && Object.values(ep.servers[firstLangKey])[0]) || ep.languages?.[firstLangKey] || '';
-    setEpisodeForm({ number: ep.number, title: ep.title || '', link });
+    const firstLang = langKeys.length > 0 ? langKeys[0] : 'jap';
+    const serversForLang = ep.servers?.[firstLang] || {};
+    const firstServer = Object.keys(serversForLang).length > 0 ? Object.keys(serversForLang)[0] : 'Server 1';
+    const link = serversForLang[firstServer] || ep.languages?.[firstLang] || '';
+    setEpisodeForm({
+      number: ep.number,
+      title: ep.title || '',
+      language: firstLang,
+      serverName: firstServer,
+      link
+    });
     const anime = animeList.find((a: any) => a.id == ep.anime_id);
     if (anime) setSelectedAnimeForEp(anime);
     setActiveSection('episodes');
@@ -621,15 +974,88 @@ export default function AdminPanel() {
 
   const deleteEpisode = async (id: any) => {
     try {
-      await API.delete('episodes', id);
+      await CloudflareAPI.deleteEpisode(id);
       setEpisodes(prev => prev.filter((ep: any) => ep.id !== id));
       if (editingEpisodeId === id) {
         setEditingEpisodeId(null);
-        setEpisodeForm({ number: 1, title: '', link: '' });
+        setEpisodeForm({ number: 1, title: '', language: 'jap', serverName: 'Server 1', link: '' });
       }
       showNotification('Episode deleted!');
     } catch (err) {
       showNotification('Failed!', 'error');
+    }
+  };
+
+  const addServerToEpisode = async () => {
+    const { episodeId, language, serverName, link } = addServerForm;
+    if (!episodeId || !language || !serverName || !link) {
+      showNotification('Please fill all fields.', 'error');
+      return;
+    }
+    const ep = episodes.find(e => e.id === episodeId);
+    if (!ep) {
+      showNotification('Episode not found.', 'error');
+      return;
+    }
+    const updatedServers = { ...(ep.servers || {}) };
+    if (!updatedServers[language]) updatedServers[language] = {};
+    updatedServers[language][serverName] = link;
+    const updatedLanguages = { ...(ep.languages || {}) };
+    if (!updatedLanguages[language]) updatedLanguages[language] = link;
+    try {
+      const result = await CloudflareAPI.putEpisode({
+        id: episodeId,
+        anime_id: ep.anime_id,
+        number: ep.number,
+        title: ep.title,
+        languages: updatedLanguages,
+        servers: updatedServers,
+      });
+      if (result.success) {
+        setEpisodes(prev => prev.map(e => e.id === episodeId ? { ...e, languages: updatedLanguages, servers: updatedServers } : e));
+        showNotification(`Server "${serverName}" added to episode ${ep.number}!`);
+        setAddServerForm({ episodeId: null, language: 'jap', serverName: '', link: '' });
+      } else {
+        showNotification('Failed to add server.', 'error');
+      }
+    } catch (err) {
+      showNotification('Network error.', 'error');
+    }
+  };
+
+  const editServerLink = async (episodeId: string, language: string, serverName: string, newLink: string) => {
+    if (!newLink.trim()) {
+      showNotification('Link cannot be empty.', 'error');
+      return;
+    }
+    try {
+      const ep = episodes.find(e => e.id === episodeId);
+      if (!ep) {
+        showNotification('Episode not found.', 'error');
+        return;
+      }
+      const updatedServers = { ...(ep.servers || {}) };
+      if (!updatedServers[language]) updatedServers[language] = {};
+      updatedServers[language][serverName] = newLink;
+      const updatedLanguages = { ...(ep.languages || {}) };
+      updatedLanguages[language] = newLink;
+
+      await CloudflareAPI.putEpisode({
+        id: episodeId,
+        anime_id: ep.anime_id,
+        number: ep.number,
+        title: ep.title,
+        languages: updatedLanguages,
+        servers: updatedServers,
+      });
+      setEpisodes(prev => prev.map(e => e.id === episodeId ? { ...e, languages: updatedLanguages, servers: updatedServers } : e));
+      showNotification(`Server "${serverName}" updated!`);
+      const updatedEp = episodes.find(e => e.id === episodeId);
+      if (updatedEp && serverManagementModal) {
+        setServerManagementModal({ episode: updatedEp, animeTitle: serverManagementModal.animeTitle });
+      }
+    } catch (err) {
+      showNotification('Failed to update server.', 'error');
     }
   };
 
@@ -641,7 +1067,7 @@ export default function AdminPanel() {
     }
     try {
       if (editingSchedule) {
-        await API.put('schedule', { id: editingSchedule.id, ...scheduleForm });
+        await CloudflareAPI.putSchedule({ id: editingSchedule.id, ...scheduleForm });
         setScheduleItems(prev => prev.map((s: any) => s.id === editingSchedule.id ? { ...s, ...scheduleForm } : s));
         setEditingSchedule(null);
         showNotification('Updated!');
@@ -655,7 +1081,7 @@ export default function AdminPanel() {
           }),
         }).catch(() => {});
       } else {
-        const result = await API.post('schedule', scheduleForm);
+        const result = await CloudflareAPI.postSchedule(scheduleForm);
         if (result.success && result.item) {
           setScheduleItems(prev => [...prev, result.item]);
           fetch('/api/send-notification', {
@@ -685,7 +1111,7 @@ export default function AdminPanel() {
   };
 
   const deleteScheduleItem = async (id: any) => {
-    await API.delete('schedule', id);
+    await CloudflareAPI.deleteSchedule(id);
     setScheduleItems(prev => prev.filter((s: any) => s.id !== id));
     showNotification('Deleted!');
   };
@@ -701,7 +1127,7 @@ export default function AdminPanel() {
       }
       const timeSlots = ['09:00', '12:00', '15:00', '18:00', '20:00', '22:00', '23:30'];
       for (let i = 0; i < Math.min(trending.length, 7); i++) {
-        await API.post('schedule', {
+        await CloudflareAPI.postSchedule({
           day: i % 7,
           time: timeSlots[i % timeSlots.length],
           title: trending[i].title,
@@ -721,7 +1147,7 @@ export default function AdminPanel() {
   const clearAllSchedule = async () => {
     if (!confirm('Delete all schedule items?')) return;
     try {
-      for (const item of scheduleItems) await API.delete('schedule', item.id);
+      for (const item of scheduleItems) await CloudflareAPI.deleteSchedule(item.id);
       setScheduleItems([]);
       showNotification('Cleared!');
     } catch (err) {
@@ -729,7 +1155,7 @@ export default function AdminPanel() {
     }
   };
 
-  // ==================== FEATURED ====================
+  // ==================== SLIDERS ====================
   const toggleFeatured = async (id: string) => {
     let newFeatured: string[];
     if (featuredIds.includes(id)) {
@@ -746,7 +1172,7 @@ export default function AdminPanel() {
       newFeatured = [...featuredIds, id];
     }
     setFeaturedIds(newFeatured);
-    await API.put('featured', { ids: newFeatured });
+    await CloudflareAPI.putFeatured(newFeatured);
   };
 
   const moveFeatured = async (id: string, dir: string) => {
@@ -755,10 +1181,9 @@ export default function AdminPanel() {
     const newOrder = [...featuredIds];
     [newOrder[idx], newOrder[dir === 'up' ? idx - 1 : idx + 1]] = [newOrder[dir === 'up' ? idx - 1 : idx + 1], newOrder[idx]];
     setFeaturedIds(newOrder);
-    await API.put('featured', { ids: newOrder });
+    await CloudflareAPI.putFeatured(newOrder);
   };
 
-  // ==================== NEWLY ADDED ====================
   const toggleNewlyAdded = async (id: string) => {
     let updated: string[];
     if (newlyAddedIds.includes(id)) {
@@ -767,7 +1192,7 @@ export default function AdminPanel() {
       updated = [...newlyAddedIds, id];
     }
     setNewlyAddedIds(updated);
-    await API.put('newly-added', { ids: updated });
+    await CloudflareAPI.putNewlyAdded(updated);
   };
 
   const moveNewlyAdded = async (id: string, dir: string) => {
@@ -776,15 +1201,19 @@ export default function AdminPanel() {
     const newOrder = [...newlyAddedIds];
     [newOrder[idx], newOrder[dir === 'up' ? idx - 1 : idx + 1]] = [newOrder[dir === 'up' ? idx - 1 : idx + 1], newOrder[idx]];
     setNewlyAddedIds(newOrder);
-    await API.put('newly-added', { ids: newOrder });
+    await CloudflareAPI.putNewlyAdded(newOrder);
   };
+
+  const currentIds = slidersTab === 'featured' ? featuredIds : newlyAddedIds;
+  const toggleCurrent = slidersTab === 'featured' ? toggleFeatured : toggleNewlyAdded;
+  const moveCurrent = slidersTab === 'featured' ? moveFeatured : moveNewlyAdded;
 
   // ==================== NEWS ====================
   const saveNews = async () => {
     if (!newsForm.title) return;
     try {
       if (editingNews) {
-        await API.put('news', { id: editingNews.id, ...newsForm });
+        await CloudflareAPI.putNews({ id: editingNews.id, ...newsForm });
         setNewsItems(prev => prev.map((n: any) => n.id === editingNews.id ? { ...n, ...newsForm } : n));
         setEditingNews(null);
         showNotification('Updated!');
@@ -799,7 +1228,7 @@ export default function AdminPanel() {
           showNotification('Duplicate article!', 'error');
           return;
         }
-        const result = await API.post('news', newsForm);
+        const result = await CloudflareAPI.postNews(newsForm);
         if (result.success && result.news) {
           setNewsItems(prev => [...prev, result.news]);
           fetch('/api/send-notification', {
@@ -823,7 +1252,7 @@ export default function AdminPanel() {
   };
 
   const deleteNewsItem = async (id: any) => {
-    await API.delete('news', id);
+    await CloudflareAPI.deleteNews(id);
     setNewsItems(prev => prev.filter((n: any) => n.id !== id));
     showNotification('Deleted!');
   };
@@ -831,18 +1260,18 @@ export default function AdminPanel() {
   // ==================== DELETE ANIME ====================
   const deleteAnime = async (id: any) => {
     try {
-      await API.delete('anime', id);
+      await CloudflareAPI.deleteAnime(id);
       setAnimeList(prev => prev.filter((a: any) => a.id !== id));
       setEpisodes(prev => prev.filter((ep: any) => ep.anime_id != id));
       if (featuredIds.includes(id)) {
         const nf = featuredIds.filter(fid => fid !== id);
         setFeaturedIds(nf);
-        await API.put('featured', { ids: nf });
+        await CloudflareAPI.putFeatured(nf);
       }
       if (newlyAddedIds.includes(id)) {
         const nf = newlyAddedIds.filter(fid => fid !== id);
         setNewlyAddedIds(nf);
-        await API.put('newly-added', { ids: nf });
+        await CloudflareAPI.putNewlyAdded(nf);
       }
       showNotification('Deleted!');
     } catch (err) {
@@ -857,13 +1286,14 @@ export default function AdminPanel() {
       showNotification('Episode not found!', 'error');
       return;
     }
-    const lang = Object.keys(ep.languages || {})[0] || 'eng';
+    const lang = Object.keys(ep.servers || {})[0] || 'jap';
     const updatedServers = { ...(ep.servers || {}) };
     if (!updatedServers[lang]) updatedServers[lang] = {};
-    updatedServers[lang] = { "Server 1": newUrl };
+    const firstServer = Object.keys(updatedServers[lang]).length > 0 ? Object.keys(updatedServers[lang])[0] : 'Server 1';
+    updatedServers[lang][firstServer] = newUrl;
     const updatedLanguages = { ...(ep.languages || {}), [lang]: newUrl };
     try {
-      await API.put('episodes', {
+      await CloudflareAPI.putEpisode({
         id: ep.id,
         anime_id: ep.anime_id,
         number: ep.number,
@@ -880,32 +1310,41 @@ export default function AdminPanel() {
   };
 
   // ==================== FILTERED CONTENT FOR DISPLAY ====================
-  // Derive unique display names from episode language keys
   const allEpisodeDisplayNames = Array.from(
     new Set(
-      episodes.flatMap(ep => Object.keys(ep.languages || {}).map(key => getLanguageDisplay(key)))
+      episodes.flatMap(ep =>
+        Object.entries(ep.languages || {})
+          .filter(([lang, url]) => url && typeof url === 'string' && url.trim() !== '')
+          .map(([lang]) => getLanguageDisplay(lang))
+      )
     )
   )
-    .filter(name => !['dub', 'sub', 'DUB', 'SUB'].includes(name))
+    .filter(name => !['dub', 'sub', 'DUB', 'SUB'].includes(name) && name)
     .sort();
 
-  const filteredAnime = animeList.filter((a: any) => {
-    if (contentSearch && !a.title.toLowerCase().includes(contentSearch.toLowerCase())) return false;
-    if (contentGenre !== 'All' && a.genre) {
-      const genres = a.genre.split(',').map((g: string) => g.trim());
-      if (!genres.includes(contentGenre)) return false;
-    }
-    if (contentType !== 'All' && a.type !== contentType) return false;
-    if (contentLang) {
-      // Check if any language key of the episode maps to the selected display name
-      const hasEpInLang = episodes.some((ep: any) => {
-        if (ep.anime_id != a.id) return false;
-        return Object.keys(ep.languages || {}).some(key => getLanguageDisplay(key) === contentLang);
-      });
-      if (!hasEpInLang) return false;
-    }
-    return true;
-  });
+  const filteredAnime = animeList
+    .map((a: any) => ({
+      ...a,
+      reportCount: getReportCountForAnime(a.id, reports)
+    }))
+    .filter((a: any) => {
+      if (contentSearch && !a.title.toLowerCase().includes(contentSearch.toLowerCase())) return false;
+      if (contentGenre !== 'All' && a.genre) {
+        const genres = a.genre.split(',').map((g: string) => g.trim());
+        if (!genres.includes(contentGenre)) return false;
+      }
+      if (contentType !== 'All' && a.type !== contentType) return false;
+      if (contentLang) {
+        const hasEpInLang = episodes.some((ep: any) => {
+          if (ep.anime_id != a.id) return false;
+          return Object.entries(ep.languages || {})
+            .some(([lang, url]) => getLanguageDisplay(lang) === contentLang && url && typeof url === 'string' && url.trim() !== '');
+        });
+        if (!hasEpInLang) return false;
+      }
+      return true;
+    })
+    .sort((a: any, b: any) => b.reportCount - a.reportCount);
 
   const types = ['All', ...new Set(animeList.map((a: any) => a.type).filter(Boolean))] as string[];
 
@@ -945,7 +1384,6 @@ export default function AdminPanel() {
     <div className="min-h-screen flex flex-col" style={{ background: '#060608' }}>
       {notification && <div className="fixed top-4 right-4 z-[200] px-5 py-3 rounded-2xl shadow-2xl text-sm font-bold flex items-center gap-2" style={{ background: notification.type === 'success' ? '#10b981' : '#ef4444', color: 'white' }}><Check className="w-4 h-4" /> {notification.msg}</div>}
 
-      {/* HEADER – logout button removed */}
       <header className="sticky top-0 z-50 border-b border-white/5 px-4 md:px-6 py-3 flex items-center justify-between" style={{ background: 'rgba(6,6,8,0.95)', backdropFilter: 'blur(20px)' }}>
         <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg" style={{ background: 'linear-gradient(135deg, #ec4899, #8b5cf6)' }}><Zap className="w-5 h-5 text-white" /></div><h1 className="text-sm font-black text-white">CMS</h1></div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -967,7 +1405,6 @@ export default function AdminPanel() {
       </header>
 
       <div className="flex-1 flex">
-        {/* MOBILE NAV */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/5 px-2 py-2 flex gap-1 overflow-x-auto" style={{ background: 'rgba(6,6,8,0.98)' }}>
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -992,9 +1429,11 @@ export default function AdminPanel() {
           {activeSection === 'import' && (
             <div className="space-y-6">
               <div><h2 className="text-xl font-black text-white">Import</h2></div>
-              <div className="flex gap-2 mb-4">
+              <div className="flex gap-2 mb-4 flex-wrap">
                 <button onClick={() => setImportTab('api')} className={`px-4 py-2 rounded-xl text-xs font-bold ${importTab === 'api' ? 'bg-pink-600 text-white' : 'bg-white/5 text-white/40'}`}>API</button>
-                <button onClick={() => setImportTab('manual')} className={`px-4 py-2 rounded-xl text-xs font-bold ${importTab === 'manual' ? 'bg-amber-600 text-white' : 'bg-white/5 text-white/40'}`}>Manual</button>
+                <button onClick={() => setImportTab('vidnest')} className={`px-4 py-2 rounded-xl text-xs font-bold ${importTab === 'vidnest' ? 'bg-purple-600 text-white' : 'bg-white/5 text-white/40'}`}>Vidnest</button>
+                <button onClick={() => setImportTab('nxsha')} className={`px-4 py-2 rounded-xl text-xs font-bold ${importTab === 'nxsha' ? 'bg-blue-600 text-white' : 'bg-white/5 text-white/40'}`}>Nxsha</button>
+                <button onClick={() => setImportTab('anikoto')} className={`px-4 py-2 rounded-xl text-xs font-bold ${importTab === 'anikoto' ? 'bg-green-600 text-white' : 'bg-white/5 text-white/40'}`}>Anikoto</button>
               </div>
 
               {importTab === 'api' && (
@@ -1021,15 +1460,236 @@ export default function AdminPanel() {
                 </div>
               )}
 
-              {importTab === 'manual' && (
+              {importTab === 'vidnest' && (
                 <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                  <div className="flex gap-3"><input type="text" value={importQuery} onChange={(e) => setImportQuery(e.target.value)} placeholder="Search..." className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white" onKeyDown={(e) => e.key === 'Enter' && handleManualImport()} /><button onClick={handleManualImport} className="px-5 py-3 rounded-xl text-white font-bold text-xs" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>Search</button></div>
-                  {importResults.length > 0 && (
+                  <div className="flex gap-3 mb-4">
+                    <input
+                      type="text"
+                      value={vidnestQuery}
+                      onChange={(e) => setVidnestQuery(e.target.value)}
+                      placeholder="Search anime on Vidnest..."
+                      className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-purple-500 outline-none"
+                      onKeyDown={(e) => e.key === 'Enter' && handleVidnestSearch()}
+                    />
+                    <button
+                      onClick={handleVidnestSearch}
+                      disabled={vidnestLoading}
+                      className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2"
+                      style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
+                    >
+                      {vidnestLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      Search Vidnest
+                    </button>
+                  </div>
+
+                  <div className="flex gap-3 mb-4">
+                    <label className="text-xs text-white/40 flex items-center">Embed Type:</label>
+                    <button
+                      onClick={() => setSelectedVidnestType('anime')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                        selectedVidnestType === 'anime' 
+                          ? 'bg-purple-600 text-white' 
+                          : 'bg-white/5 text-white/40'
+                      }`}
+                    >
+                      Vidnest Anime
+                    </button>
+                    <button
+                      onClick={() => setSelectedVidnestType('animepahe')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                        selectedVidnestType === 'animepahe' 
+                          ? 'bg-purple-600 text-white' 
+                          : 'bg-white/5 text-white/40'
+                      }`}
+                    >
+                      AnimePahe
+                    </button>
+                  </div>
+
+                  {vidnestResults.length > 0 && (
                     <div className="mt-6 space-y-3">
-                      {importResults.map((item) => (
-                        <div key={item.id} className="flex items-center gap-4 p-4 rounded-xl border border-white/5"><div className="w-14 h-20 rounded-lg bg-cover shrink-0" style={{ backgroundImage: `url(${item.image})` }} /><div className="flex-1"><p className="text-sm text-white font-bold">{item.title}</p><p className="text-xs text-white/30">{item.type} • {item.studio} • ★{item.score}</p></div><button onClick={() => importSingle(item)} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-600/80">Import</button></div>
+                      <h4 className="text-sm font-bold text-white">Vidnest Results ({vidnestResults.length})</h4>
+                      {vidnestResults.map((result) => (
+                        <div key={result.id} className="flex items-center gap-4 p-4 rounded-xl border border-white/5 hover:border-purple-500/20" style={{ background: 'rgba(255,255,255,0.01)' }}>
+                          <div className="w-14 h-20 rounded-lg bg-cover bg-center shrink-0" style={{ backgroundImage: `url(${result.image})` }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-white">{result.title}</p>
+                            <p className="text-xs text-white/30">
+                              {result.type} • {result.episodes} eps • ★{result.score}
+                            </p>
+                            <p className="text-xs text-white/20 line-clamp-1">{result.genre}</p>
+                            <p className="text-[10px] text-white/20 mt-1">AniList ID: {result.anilistId}</p>
+                          </div>
+                          <button
+                            onClick={() => importVidnestAnime(result)}
+                            disabled={isImporting}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-purple-600/80 hover:bg-purple-600 shrink-0 disabled:opacity-50"
+                          >
+                            Import Anime + Episodes
+                          </button>
+                        </div>
                       ))}
                     </div>
+                  )}
+                  {vidnestResults.length === 0 && vidnestQuery && !vidnestLoading && (
+                    <p className="text-white/30 text-sm text-center mt-4">No results found on Vidnest.</p>
+                  )}
+                </div>
+              )}
+
+              {importTab === 'nxsha' && (
+                <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  <div className="flex gap-3 mb-4">
+                    <input
+                      type="text"
+                      value={nxshaQuery}
+                      onChange={(e) => setNxshaQuery(e.target.value)}
+                      placeholder="Search by title or paste TMDb ID (e.g., 1399)..."
+                      className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-blue-500 outline-none"
+                      onKeyDown={(e) => e.key === 'Enter' && handleNxshaAction()}
+                    />
+                    <button
+                      onClick={handleNxshaAction}
+                      disabled={isImporting || !nxshaQuery.trim()}
+                      className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2"
+                      style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}
+                    >
+                      {isImporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      Go
+                    </button>
+                  </div>
+
+                  <div className="flex gap-3 mb-4 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-white/40">Season:</label>
+                      <input
+                        type="number"
+                        value={nxshaSeason}
+                        onChange={(e) => setNxshaSeason(parseInt(e.target.value) || 1)}
+                        min="1"
+                        className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white w-20"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-white/40">Language:</label>
+                      <select
+                        value={nxshaLanguage}
+                        onChange={(e) => setNxshaLanguage(e.target.value)}
+                        className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white"
+                      >
+                        {Object.entries(LANGUAGE_DISPLAY_NAMES).map(([code, name]) => (
+                          <option key={code} value={code}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {nxshaResults.length > 0 && (
+                    <div className="mt-6 space-y-3">
+                      <h4 className="text-sm font-bold text-white">Results ({nxshaResults.length})</h4>
+                      {nxshaResults.map((result) => (
+                        <div key={result.id} className="flex items-center gap-4 p-4 rounded-xl border border-white/5 hover:border-blue-500/20" style={{ background: 'rgba(255,255,255,0.01)' }}>
+                          <div className="w-14 h-20 rounded-lg bg-cover bg-center shrink-0" style={{ backgroundImage: `url(${result.image})` }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-white">{result.title}</p>
+                            <p className="text-xs text-white/30">
+                              {result.type} • {result.episodes} eps
+                            </p>
+                            <p className="text-[10px] text-white/20 mt-1">TMDb ID: {result.tmdbId}</p>
+                          </div>
+                          <button
+                            onClick={() => importNxshaAnime(result, nxshaLanguage)}
+                            disabled={isImporting}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600/80 hover:bg-blue-600 shrink-0 disabled:opacity-50"
+                          >
+                            Import
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {nxshaResults.length === 0 && nxshaQuery && !isImporting && (
+                    <p className="text-white/30 text-sm text-center mt-4">No results found. Try a different title or paste a TMDb ID.</p>
+                  )}
+                </div>
+              )}
+
+              {importTab === 'anikoto' && (
+                <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  <div className="flex gap-3 mb-4">
+                    <input
+                      type="text"
+                      value={anikotoQuery}
+                      onChange={(e) => setAnikotoQuery(e.target.value)}
+                      placeholder="Search anime on Anikoto..."
+                      className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-green-500 outline-none"
+                      onKeyDown={(e) => e.key === 'Enter' && handleAnikotoSearch()}
+                    />
+                    <button
+                      onClick={handleAnikotoSearch}
+                      disabled={anikotoLoading}
+                      className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2"
+                      style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
+                    >
+                      {anikotoLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      Search Anikoto
+                    </button>
+                  </div>
+
+                  <div className="flex gap-3 mb-4">
+                    <label className="text-xs text-white/40 flex items-center">Language:</label>
+                    <button
+                      onClick={() => setAnikotoLanguage('sub')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                        anikotoLanguage === 'sub' 
+                          ? 'bg-green-600 text-white' 
+                          : 'bg-white/5 text-white/40'
+                      }`}
+                    >
+                      Sub
+                    </button>
+                    <button
+                      onClick={() => setAnikotoLanguage('dub')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                        anikotoLanguage === 'dub' 
+                          ? 'bg-green-600 text-white' 
+                          : 'bg-white/5 text-white/40'
+                      }`}
+                    >
+                      Dub
+                    </button>
+                  </div>
+
+                  {anikotoResults.length > 0 && (
+                    <div className="mt-6 space-y-3">
+                      <h4 className="text-sm font-bold text-white">Results ({anikotoResults.length})</h4>
+                      {anikotoResults.map((result) => (
+                        <div key={result.id} className="flex items-center gap-4 p-4 rounded-xl border border-white/5 hover:border-green-500/20" style={{ background: 'rgba(255,255,255,0.01)' }}>
+                          <div className="w-14 h-20 rounded-lg bg-cover bg-center shrink-0" style={{ backgroundImage: `url(${result.image})` }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-white">{result.title}</p>
+                            <p className="text-xs text-white/30">
+                              {result.type} • {result.episodes} eps • ★{result.score}
+                            </p>
+                            <p className="text-xs text-white/20 line-clamp-1">{result.genre}</p>
+                            {result.note && (
+                              <p className="text-[10px] text-amber-400/70 mt-1">{result.note}</p>
+                            )}
+                            <p className="text-[10px] text-white/20 mt-1">MAL ID: {result.mal_id}</p>
+                          </div>
+                          <button
+                            onClick={() => importAnikotoAnime(result)}
+                            disabled={isImporting}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-green-600/80 hover:bg-green-600 shrink-0 disabled:opacity-50"
+                          >
+                            Import Anime + Episodes
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {anikotoResults.length === 0 && anikotoQuery && !anikotoLoading && (
+                    <p className="text-white/30 text-sm text-center mt-4">No results found on Anikoto.</p>
                   )}
                 </div>
               )}
@@ -1071,61 +1731,95 @@ export default function AdminPanel() {
                         <button onClick={() => setSelectedAnimeForEp(null)} className="text-xs text-purple-300">Change</button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <div><label className="text-[10px] text-white/30">Episode #</label><input type="number" value={episodeForm.number} onChange={(e) => setEpisodeForm({...episodeForm, number: parseInt(e.target.value) || 1})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
                       <div className="md:col-span-2"><label className="text-[10px] text-white/30">Title</label><input type="text" value={episodeForm.title} onChange={(e) => setEpisodeForm({...episodeForm, title: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/30">Language</label>
-                      <div className="flex gap-1.5 flex-wrap mb-3">
-                        {customLanguages.map((lang: any) => (
-                          <button
-                            key={lang.name}
-                            onClick={() => setActiveLanguage(lang.name)}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${activeLanguage === lang.name ? 'text-white bg-purple-500/30' : 'text-white/40'}`}
-                          >
-                            {lang.name} ({lang.type})
-                          </button>
-                        ))}
+                      <div><label className="text-[10px] text-white/30">Language Code</label>
+                        <select value={episodeForm.language} onChange={(e) => setEpisodeForm({...episodeForm, language: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1">
+                          {Object.keys(LANGUAGE_DISPLAY_NAMES).map(lang => (
+                            <option key={lang} value={lang}>{lang} ({LANGUAGE_DISPLAY_NAMES[lang]})</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
-                    <div>
-                      <label className="text-[10px] text-white/30">Link for {activeLanguage}</label>
-                      <input
-                        type="text"
-                        value={episodeForm.link}
-                        onChange={(e) => setEpisodeForm({...episodeForm, link: e.target.value})}
-                        placeholder={`Paste video URL for ${activeLanguage}...`}
-                        className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 mt-1"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div><label className="text-[10px] text-white/30">Server Name</label><input type="text" value={episodeForm.serverName} onChange={(e) => setEpisodeForm({...episodeForm, serverName: e.target.value})} placeholder="e.g. Vidnest, Nxsha" className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
+                      <div className="md:col-span-2"><label className="text-[10px] text-white/30">Link</label><input type="text" value={episodeForm.link} onChange={(e) => setEpisodeForm({...episodeForm, link: e.target.value})} placeholder="Video URL..." className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 mt-1" /></div>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={addEpisode} className="flex items-center gap-2 px-6 py-3 rounded-xl text-white font-bold text-sm" style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}>{editingEpisodeId ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}{editingEpisodeId ? 'Update' : 'Add Episode'}</button>
-                      {editingEpisodeId && <button onClick={() => { setEditingEpisodeId(null); setEpisodeForm({ number: 1, title: '', link: '' }); }} className="px-6 py-3 rounded-xl text-white/50 text-sm bg-white/5">Cancel</button>}
+                      {editingEpisodeId && <button onClick={() => { setEditingEpisodeId(null); setEpisodeForm({ number: 1, title: '', language: 'jap', serverName: 'Server 1', link: '' }); }} className="px-6 py-3 rounded-xl text-white/50 text-sm bg-white/5">Cancel</button>}
                     </div>
                   </div>
                 )}
               </div>
               {selectedAnimeForEp && (
                 <div className="rounded-2xl border border-white/5 overflow-hidden" style={{ background: 'rgba(255,255,255,0.01)' }}>
-                  <div className="p-4 border-b border-white/5"><h3 className="text-sm font-bold text-white">Episodes ({episodes.filter((ep: any) => ep.anime_id == selectedAnimeForEp?.id).length})</h3></div>
+                  <div className="p-4 border-b border-white/5 flex justify-between items-center"><h3 className="text-sm font-bold text-white">Episodes ({episodes.filter((ep: any) => ep.anime_id == selectedAnimeForEp?.id).length})</h3></div>
                   {episodes.filter((ep: any) => ep.anime_id == selectedAnimeForEp?.id).sort((a: any, b: any) => a.number - b.number).map((ep: any) => (
-                    <div key={ep.id} className="flex items-center gap-4 p-4 border-b border-white/5 hover:bg-white/[0.01]">
-                      <div className="w-12 h-8 rounded-lg flex items-center justify-center text-sm font-black text-white bg-purple-500/30">#{ep.number}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-white">{ep.title || `Episode ${ep.number}`}</p>
-                        <div className="flex gap-2 mt-1">
-                          {Object.keys(ep.languages || {}).map(lang => (
-                            <span key={lang} className="text-[9px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded">{getLanguageDisplay(lang)}</span>
-                          ))}
+                    <div key={ep.id} className="p-4 border-b border-white/5 hover:bg-white/[0.01]">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-8 rounded-lg flex items-center justify-center text-sm font-black text-white bg-purple-500/30">#{ep.number}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-white">{ep.title || `Episode ${ep.number}`}</p>
+                          <div className="flex gap-2 mt-1 flex-wrap">
+                            {Object.keys(ep.servers || {}).map(lang => (
+                              <span key={lang} className="text-[9px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                {getLanguageDisplay(lang)}
+                                <span className="text-[8px] text-white/20">({Object.keys(ep.servers[lang] || {}).length} servers)</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex gap-1">
+                          <button onClick={() => editEpisode(ep)} className="p-2 text-white/30 hover:text-blue-400"><Edit className="w-4 h-4"/></button>
+                          <button onClick={() => deleteEpisode(ep.id)} className="p-2 text-white/30 hover:text-red-400"><Trash2 className="w-4 h-4"/></button>
+                          <button onClick={() => setServerManagementModal({ episode: ep, animeTitle: selectedAnimeForEp?.title || '' })} className="p-2 text-white/30 hover:text-green-400">
+                            <ServerIcon className="w-4 h-4"/>
+                          </button>
                         </div>
                       </div>
-                      <div className="flex gap-1">
-                        <button onClick={() => editEpisode(ep)} className="p-2 text-white/30 hover:text-blue-400"><Edit className="w-4 h-4"/></button>
-                        <button onClick={() => deleteEpisode(ep.id)} className="p-2 text-white/30 hover:text-red-400"><Trash2 className="w-4 h-4"/></button>
+                      <div className="mt-2 ml-16 space-y-1">
+                        {Object.entries(ep.servers || {}).map(([lang, serversObj]) => {
+                          const serversRecord = serversObj as Record<string, string>;
+                          return (
+                            <div key={lang} className="text-xs text-zinc-400 flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-white/50">{getLanguageDisplay(lang)}:</span>
+                              {Object.entries(serversRecord).map(([srv, url]) => (
+                                <span key={srv} className="bg-white/5 px-2 py-0.5 rounded flex items-center gap-1">
+                                  {srv} <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">link</a>
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })}
+                        <button
+                          onClick={() => setAddServerForm({ episodeId: ep.id, language: 'jap', serverName: 'Server 2', link: '' })}
+                          className="text-[10px] text-blue-400 hover:underline"
+                        >
+                          + Add Server
+                        </button>
                       </div>
                     </div>
                   ))}
+                  {addServerForm.episodeId && (
+                    <div className="p-4 bg-white/5 border-t border-white/5">
+                      <h4 className="text-xs font-bold text-white mb-2">Add Server to Episode #{episodes.find(e => e.id === addServerForm.episodeId)?.number}</h4>
+                      <div className="grid grid-cols-4 gap-2">
+                        <select value={addServerForm.language} onChange={(e) => setAddServerForm({...addServerForm, language: e.target.value})} className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white">
+                          {Object.keys(LANGUAGE_DISPLAY_NAMES).map(lang => (
+                            <option key={lang} value={lang}>{lang}</option>
+                          ))}
+                        </select>
+                        <input type="text" value={addServerForm.serverName} onChange={(e) => setAddServerForm({...addServerForm, serverName: e.target.value})} placeholder="Server name" className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white" />
+                        <input type="text" value={addServerForm.link} onChange={(e) => setAddServerForm({...addServerForm, link: e.target.value})} placeholder="Link" className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white col-span-2" />
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={addServerToEpisode} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white">Add Server</button>
+                        <button onClick={() => setAddServerForm({ episodeId: null, language: 'jap', serverName: '', link: '' })} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white/50">Cancel</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1162,32 +1856,111 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* ==================== FEATURED ==================== */}
-          {activeSection === 'featured' && (
+          {/* ==================== SLIDERS ==================== */}
+          {activeSection === 'sliders' && (
             <div className="space-y-6">
-              <div><h2 className="text-xl font-black text-white">Featured Slider</h2><p className="text-white/30 text-xs mt-1">Select 1-5 anime for homepage</p></div>
-              <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-                  {animeList.map((anime: any) => {const isFeat=featuredIds.includes(anime.id);return(<button key={anime.id} onClick={()=>toggleFeatured(anime.id)} className={`rounded-2xl overflow-hidden border-2 transition-all ${isFeat?'border-amber-500':'border-transparent hover:border-white/10'}`}><div className="aspect-[3/4] bg-cover bg-center relative" style={{backgroundImage:`url(${anime.image})`}}><div className="absolute inset-0 bg-gradient-to-t from-black/80"/>{isFeat&&<div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center"><Star className="w-4 h-4 text-white fill-current"/></div>}<div className="absolute bottom-3 left-3 right-3"><p className="text-xs font-black text-white line-clamp-1">{anime.title}</p><p className="text-[10px] text-white/50">{anime.type} • ★{anime.score}</p></div></div></button>)})}
-                </div>
-                <div className="border-t border-white/5 pt-4"><h3 className="text-sm font-bold text-white mb-3">Order ({featuredIds.length}/5)</h3>
-                  {featuredIds.map((id,idx)=>{const anime=animeList.find((a: any)=>a.id===id);if(!anime)return null;return(<div key={id} className="flex items-center gap-3 p-3 rounded-xl border border-white/5"><span className="text-lg font-black text-amber-500 w-8">#{idx+1}</span><div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${anime.image})`}}/><div className="flex-1"><p className="text-sm text-white">{anime.title}</p></div><div className="flex gap-1"><button onClick={()=>moveFeatured(id,'up')} disabled={idx===0} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowLeft className="w-4 h-4 rotate-90"/></button><button onClick={()=>moveFeatured(id,'down')} disabled={idx===featuredIds.length-1} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowRight className="w-4 h-4 rotate-90"/></button><button onClick={()=>toggleFeatured(id)} className="p-1.5 text-white/30 hover:text-red-400"><X className="w-4 h-4"/></button></div></div>)})}
-                </div>
+              <div className="flex justify-between items-center">
+                <div><h2 className="text-xl font-black text-white">Sliders</h2></div>
               </div>
-            </div>
-          )}
 
-          {/* ==================== NEWLY ADDED ==================== */}
-          {activeSection === 'newly-added' && (
-            <div className="space-y-6">
-              <div><h2 className="text-xl font-black text-white">Newly Added</h2><p className="text-white/30 text-xs mt-1">Select anime to show in the Newly Added section (no limit)</p></div>
+              <div className="flex gap-2 border-b border-white/5 pb-2">
+                <button
+                  onClick={() => setSlidersTab('featured')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${slidersTab === 'featured' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-white/40 hover:text-white/70'}`}
+                >
+                  <Star className="w-4 h-4 inline mr-1" /> Featured
+                </button>
+                <button
+                  onClick={() => setSlidersTab('newlyAdded')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${slidersTab === 'newlyAdded' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-white/40 hover:text-white/70'}`}
+                >
+                  <Gift className="w-4 h-4 inline mr-1" /> Newly Added
+                </button>
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                <input
+                  type="text"
+                  value={sliderSearch}
+                  onChange={(e) => setSliderSearch(e.target.value)}
+                  placeholder={`Search anime to add to ${slidersTab === 'featured' ? 'Featured' : 'Newly Added'}...`}
+                  className="w-full bg-black/30 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/20 focus:border-purple-500 outline-none"
+                />
+              </div>
+
               <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                <p className="text-xs text-white/30 mb-4">
+                  {slidersTab === 'featured' ? 'Select 1-5 anime for the Featured slider' : 'Select anime to show in the Newly Added section (no limit)'}
+                </p>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-                  {animeList.map((anime: any) => {const isAdded=newlyAddedIds.includes(anime.id);return(<button key={anime.id} onClick={()=>toggleNewlyAdded(anime.id)} className={`rounded-2xl overflow-hidden border-2 transition-all ${isAdded?'border-emerald-500':'border-transparent hover:border-white/10'}`}><div className="aspect-[3/4] bg-cover bg-center relative" style={{backgroundImage:`url(${anime.image})`}}><div className="absolute inset-0 bg-gradient-to-t from-black/80"/>{isAdded&&<div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center"><Check className="w-4 h-4 text-white"/></div>}<div className="absolute bottom-3 left-3 right-3"><p className="text-xs font-black text-white line-clamp-1">{anime.title}</p><p className="text-[10px] text-white/50">{anime.type} • ★{anime.score}</p></div></div></button>)})}
+                  {animeList
+                    .filter(anime => anime.title.toLowerCase().includes(sliderSearch.toLowerCase()))
+                    .map((anime: any) => {
+                      const isSelected = currentIds.includes(anime.id);
+                      return (
+                        <button
+                          key={anime.id}
+                          onClick={() => toggleCurrent(anime.id)}
+                          className={`rounded-2xl overflow-hidden border-2 transition-all ${isSelected ? 'border-amber-500' : 'border-transparent hover:border-white/10'}`}
+                        >
+                          <div className="aspect-[3/4] bg-cover bg-center relative" style={{ backgroundImage: `url(${anime.image})` }}>
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80"/>
+                            {isSelected && (
+                              <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center">
+                                <Star className="w-4 h-4 text-white fill-current"/>
+                              </div>
+                            )}
+                            <div className="absolute bottom-3 left-3 right-3">
+                              <p className="text-xs font-black text-white line-clamp-1">{anime.title}</p>
+                              <p className="text-[10px] text-white/50">{anime.type} • ★{anime.score}</p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  {animeList.filter(a => a.title.toLowerCase().includes(sliderSearch.toLowerCase())).length === 0 && (
+                    <div className="col-span-full text-center text-white/30 text-sm py-8">No anime found matching "{sliderSearch}"</div>
+                  )}
                 </div>
-                <div className="border-t border-white/5 pt-4"><h3 className="text-sm font-bold text-white mb-3">Order ({newlyAddedIds.length})</h3>
-                  {newlyAddedIds.length === 0 ? <p className="text-xs text-zinc-500">No anime selected yet.</p> :
-                    newlyAddedIds.map((id,idx)=>{const anime=animeList.find((a: any)=>a.id===id);if(!anime)return null;return(<div key={id} className="flex items-center gap-3 p-3 rounded-xl border border-white/5"><span className="text-lg font-black text-emerald-500 w-8">#{idx+1}</span><div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{backgroundImage:`url(${anime.image})`}}/><div className="flex-1"><p className="text-sm text-white">{anime.title}</p></div><div className="flex gap-1"><button onClick={()=>moveNewlyAdded(id,'up')} disabled={idx===0} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowLeft className="w-4 h-4 rotate-90"/></button><button onClick={()=>moveNewlyAdded(id,'down')} disabled={idx===newlyAddedIds.length-1} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowRight className="w-4 h-4 rotate-90"/></button><button onClick={()=>toggleNewlyAdded(id)} className="p-1.5 text-white/30 hover:text-red-400"><X className="w-4 h-4"/></button></div></div>)})}
+                <div className="border-t border-white/5 pt-4">
+                  <h3 className="text-sm font-bold text-white mb-3">Order ({currentIds.length}{slidersTab === 'featured' ? '/5' : ''})</h3>
+                  {currentIds.length === 0 ? (
+                    <p className="text-xs text-zinc-500">No anime selected yet.</p>
+                  ) : (
+                    currentIds.map((id, idx) => {
+                      const anime = animeList.find((a: any) => a.id === id);
+                      if (!anime) return null;
+                      return (
+                        <div key={id} className="flex items-center gap-3 p-3 rounded-xl border border-white/5 mb-2">
+                          <span className="text-lg font-black text-amber-500 w-8">#{idx + 1}</span>
+                          <div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{ backgroundImage: `url(${anime.image})` }} />
+                          <div className="flex-1">
+                            <p className="text-sm text-white">{anime.title}</p>
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => moveCurrent(id, 'up')}
+                              disabled={idx === 0}
+                              className="p-1.5 text-white/30 disabled:opacity-20"
+                            >
+                              <ArrowLeft className="w-4 h-4 rotate-90" />
+                            </button>
+                            <button
+                              onClick={() => moveCurrent(id, 'down')}
+                              disabled={idx === currentIds.length - 1}
+                              className="p-1.5 text-white/30 disabled:opacity-20"
+                            >
+                              <ArrowRight className="w-4 h-4 rotate-90" />
+                            </button>
+                            <button onClick={() => toggleCurrent(id)} className="p-1.5 text-white/30 hover:text-red-400">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             </div>
@@ -1211,48 +1984,7 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* ==================== LANGUAGES (auto‑populated) ==================== */}
-          {activeSection === 'languages' && (
-            <div className="space-y-6">
-              <div className="flex justify-between">
-                <div><h2 className="text-xl font-black text-white">Languages</h2><p className="text-white/30 text-xs mt-1">Manage all languages – add, edit, or remove any</p></div>
-                <button onClick={() => { setShowAddLang(!showAddLang); setEditingLanguage(null); setNewLang({ name: '', type: 'SUB' }); }} className="px-4 py-2.5 rounded-xl text-white font-bold text-xs flex items-center gap-2" style={{background:'linear-gradient(135deg,#ef4444,#dc2626)'}}>
-                  <Plus className="w-4 h-4"/> Add Language
-                </button>
-              </div>
-
-              {showAddLang && (
-                <div className="rounded-2xl border border-red-500/20 p-4" style={{background:'rgba(239,68,68,0.05)'}}>
-                  <h3 className="text-sm font-bold text-white mb-4">{editingLanguage ? 'Edit Language' : 'Add New Language'}</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><label className="text-[10px] text-white/30">Name</label><input type="text" value={newLang.name} onChange={(e) => setNewLang({...newLang, name: e.target.value})} placeholder="e.g. Spanish" className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1" /></div>
-                    <div><label className="text-[10px] text-white/30">Type</label><select value={newLang.type} onChange={(e) => setNewLang({...newLang, type: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1"><option>SUB</option><option>DUB</option></select></div>
-                  </div>
-                  <div className="flex gap-2 mt-4">
-                    <button onClick={editingLanguage ? updateLanguage : addLanguage} className="px-5 py-2.5 rounded-xl text-white text-xs font-bold" style={{background:'#ef4444'}}>{editingLanguage ? 'Update' : 'Save'}</button>
-                    <button onClick={() => { setShowAddLang(false); setEditingLanguage(null); setNewLang({ name: '', type: 'SUB' }); }} className="px-5 py-2.5 rounded-xl text-white/50 text-xs bg-white/5">Cancel</button>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {customLanguages.map((lang: any) => (
-                  <div key={lang.name} className="rounded-2xl border border-white/5 p-4 flex items-center justify-between group" style={{background:'rgba(255,255,255,0.02)'}}>
-                    <div>
-                      <p className="text-sm text-white font-bold">{lang.name}</p>
-                      <p className="text-[10px] text-white/30 uppercase">{lang.type}</p>
-                    </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditingLanguage(lang); setNewLang({ name: lang.name, type: lang.type }); setShowAddLang(true); }} className="p-1.5 text-white/30 hover:text-blue-400 transition-colors" title="Edit"><Edit className="w-3.5 h-3.5"/></button>
-                      <button onClick={() => { if (confirm(`Remove "${lang.name}" language?`)) removeLanguage(lang); }} className="p-1.5 text-white/30 hover:text-red-400 transition-colors" title="Remove"><Trash2 className="w-3.5 h-3.5"/></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ==================== CONTENT (with friendly language names, no dub/sub) ==================== */}
+          {/* ==================== CONTENT ==================== */}
           {activeSection === 'content' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
@@ -1265,7 +1997,6 @@ export default function AdminPanel() {
                 </div>
               </div>
 
-              {/* Language filter buttons – using unique display names */}
               <div className="flex flex-wrap gap-2 items-center">
                 <button onClick={() => setContentLang(null)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${contentLang === null ? 'bg-white text-black' : 'bg-white/5 text-white/40'}`}>All</button>
                 {allEpisodeDisplayNames.map((displayName) => (
@@ -1290,7 +2021,6 @@ export default function AdminPanel() {
                 </select>
               </div>
 
-              {/* Display filtered anime */}
               {filteredAnime.length === 0 ? (
                 <div className="text-center py-16 text-white/30"><Film className="w-16 h-16 mx-auto mb-4 opacity-30"/><p>No content found.</p></div>
               ) : (
@@ -1298,19 +2028,21 @@ export default function AdminPanel() {
                   const eps = episodes.filter((ep: any) => ep.anime_id == anime.id);
                   const animeReports = reports.filter((r: any) => r.animeId == anime.id);
                   return (
-                    <div key={anime.id} className="rounded-2xl border border-white/5 overflow-hidden" style={{ background: 'rgba(255,255,255,0.01)' }}>
+                    <div key={anime.id} className={`rounded-2xl border ${animeReports.length > 0 ? 'border-red-500/50' : 'border-white/5'} overflow-hidden`} style={{ background: 'rgba(255,255,255,0.01)' }}>
                       <div className="flex items-center gap-4 p-4 border-b border-white/5" style={{ background: 'rgba(255,255,255,0.02)' }}>
                         <div className="w-12 h-16 rounded-lg bg-cover shrink-0" style={{ backgroundImage: `url(${anime.image})` }} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-white">{anime.title}</p>
                           <p className="text-xs text-white/30">{anime.type} • {anime.genre?.split(',').slice(0,2).join(', ')} • ★{anime.score}</p>
+                          {animeReports.length > 0 && (
+                            <p className="text-xs text-red-400">⚠️ {animeReports.length} report{animeReports.length > 1 ? 's' : ''}</p>
+                          )}
                         </div>
                         <div className="flex gap-1">
                           <button onClick={() => openEditAnime(anime)} className="p-2 text-white/30 hover:text-blue-400"><Edit className="w-4 h-4"/></button>
                           <button onClick={() => deleteAnime(anime.id)} className="p-2 text-white/30 hover:text-red-400"><Trash2 className="w-4 h-4"/></button>
                         </div>
                       </div>
-                      {/* Reports for this anime */}
                       {animeReports.length > 0 && (
                         <div className="p-3 space-y-2 bg-red-500/5">
                           <p className="text-xs font-bold text-red-400">Reports ({animeReports.length})</p>
@@ -1340,7 +2072,6 @@ export default function AdminPanel() {
                           ))}
                         </div>
                       )}
-                      {/* Episodes list */}
                       {eps.length > 0 && (
                         <div className="p-3">
                           <div className="flex gap-2 flex-wrap">
@@ -1409,6 +2140,56 @@ export default function AdminPanel() {
             <div className="flex gap-2">
               <button onClick={() => fixReportedLink(quickEditEp.animeId, quickEditEp.epNumber, quickEditUrl)} className="px-4 py-2 rounded-xl text-white font-bold text-sm bg-purple-600">Save Link</button>
               <button onClick={() => setQuickEditEp(null)} className="px-4 py-2 rounded-xl text-white/50 text-sm bg-white/5">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SERVER MANAGEMENT MODAL */}
+      {serverManagementModal && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setServerManagementModal(null)}>
+          <div className="bg-[#1a1a2e] rounded-2xl border border-white/10 p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-black text-white">Manage Servers</h3>
+              <button onClick={() => setServerManagementModal(null)} className="p-1 text-white/40 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs text-white/40 mb-4">Episode #{serverManagementModal.episode.number} – {serverManagementModal.animeTitle}</p>
+            
+            {Object.entries(serverManagementModal.episode.servers || {}).map(([lang, serversObj]) => {
+              const serversRecord = serversObj as Record<string, string>;
+              return (
+                <div key={lang} className="mb-4 p-3 rounded-xl border border-white/5 bg-white/5">
+                  <h4 className="text-sm font-bold text-white mb-2">{getLanguageDisplay(lang)}</h4>
+                  {Object.entries(serversRecord).map(([serverName, url]) => (
+                    <div key={serverName} className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-white/40 w-24 flex-shrink-0">{serverName}</span>
+                      <input
+                        type="text"
+                        value={url}
+                        onChange={(e) => {
+                          const updatedEp = { ...serverManagementModal.episode };
+                          updatedEp.servers[lang][serverName] = e.target.value;
+                          setServerManagementModal({ ...serverManagementModal, episode: updatedEp });
+                        }}
+                        className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500"
+                      />
+                      <button
+                        onClick={() => {
+                          const newLink = serverManagementModal.episode.servers[lang][serverName];
+                          editServerLink(serverManagementModal.episode.id, lang, serverName, newLink);
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 flex-shrink-0"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+            
+            <div className="text-xs text-white/30 mt-4 text-center">
+              Tip: You can also use the "Add Server" button below the episode to add a new server.
             </div>
           </div>
         </div>

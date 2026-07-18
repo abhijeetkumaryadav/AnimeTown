@@ -10,15 +10,19 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.1",
+    "@tanstack/react-query": "^5.101.2",
     "@videojs/http-streaming": "^3.17.5",
+    "cheerio": "^1.2.0",
     "firebase": "^12.15.0",
     "firebase-admin": "^14.1.0",
     "hls.js": "^1.6.16",
     "lucide-react": "^1.23.0",
-    "next": "16.2.10",
+    "next": "^16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "react-player": "^3.4.0"
+    "react-player": "^3.4.0",
+    "rss-parser": "^3.13.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

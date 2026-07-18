@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import { supabase } from '@/lib/supabaseClient';
+import { CloudflareAPI } from '@/lib/db-client';  // ✅ Import Cloudflare client
 
 // ============================================================
 // TYPES
@@ -114,23 +115,18 @@ function getSafeImage(url: string | undefined | null): string {
 }
 
 // ============================================================
-// COMPONENTS
+// COMPONENTS (with mobile improvements)
 // ============================================================
 
 /**
- * FULL‑WIDTH HERO SECTION – fixed height, no resizing
- * - No rounded corners, no border = seamless edge‑to‑edge
- * - Fixed height: h-[360px] on mobile, h-[440px] on md+
- * - Title & description are line‑clamped to prevent expansion
+ * HERO SECTION – mobile‑optimised height
  */
 function HeroSection({ anime, onPrev, onNext, onWatch, onToggleList, isInList }: any) {
   return (
-    <section className="relative w-full h-[360px] md:h-[440px] overflow-hidden bg-[#0c0d19] shadow-2xl flex items-center">
-      {/* Overlays */}
+    <section className="relative w-full h-[300px] md:h-[440px] overflow-hidden bg-[#0c0d19] shadow-2xl flex items-center">
       <div className="absolute inset-0 bg-gradient-to-t from-[#06070d] via-transparent to-black/20 z-10" />
       <div className="absolute inset-y-0 left-0 w-full md:w-3/5 bg-gradient-to-r from-[#070913] via-[#070913]/95 to-transparent z-10" />
       
-      {/* Background image */}
       <div className="absolute right-0 top-0 bottom-0 w-full md:w-1/2 opacity-40 md:opacity-100 z-0">
         <img
           src={getSafeImage(anime?.image)}
@@ -139,52 +135,44 @@ function HeroSection({ anime, onPrev, onNext, onWatch, onToggleList, isInList }:
         />
       </div>
 
-      {/* Navigation arrows (desktop) */}
       <div className="absolute right-6 top-6 z-20 hidden md:flex items-center gap-1.5">
-        <button
-          onClick={onPrev}
-          className="w-7 h-7 bg-black/40 border border-zinc-800 rounded flex items-center justify-center text-zinc-400 hover:text-amber-400 transition-all"
-        >
+        <button onClick={onPrev} className="w-7 h-7 bg-black/40 border border-zinc-800 rounded flex items-center justify-center text-zinc-400 hover:text-amber-400 transition-all">
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <button
-          onClick={onNext}
-          className="w-7 h-7 bg-black/40 border border-zinc-800 rounded flex items-center justify-center text-zinc-400 hover:text-amber-400 transition-all"
-        >
+        <button onClick={onNext} className="w-7 h-7 bg-black/40 border border-zinc-800 rounded flex items-center justify-center text-zinc-400 hover:text-amber-400 transition-all">
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Content */}
-      <div className="relative pl-6 md:pl-16 pr-6 max-w-xl z-20 space-y-4 w-full">
-        <span className="inline-block bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-bold px-2.5 py-0.5 rounded-md tracking-wider shadow-[0_0_10px_rgba(245,158,11,0.2)]">
+      <div className="relative pl-5 md:pl-16 pr-5 max-w-xl z-20 space-y-3 w-full">
+        <span className="inline-block bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider shadow-[0_0_10px_rgba(245,158,11,0.2)]">
           #1 Spotlight
         </span>
-        <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight text-white drop-shadow line-clamp-2">
+        <h1 className="text-2xl md:text-5xl font-black tracking-tight leading-tight text-white drop-shadow line-clamp-2">
           {anime?.title || "Monogatari Series"}
         </h1>
         <p className="hidden md:block text-xs sm:text-sm text-zinc-400 leading-relaxed max-w-md line-clamp-2">
           {anime?.description || "Experience the mind‑bending supernatural world of Monogatari."}
         </p>
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex items-center gap-2 pt-0.5">
           <button
             onClick={onWatch}
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 transition-all text-black text-xs font-bold py-2.5 px-5 rounded-lg shadow-lg shadow-amber-500/20"
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 transition-all text-black text-[11px] md:text-xs font-bold py-2 px-4 rounded-lg shadow-lg shadow-amber-500/20"
           >
             <Play className="w-3.5 h-3.5 fill-current" /> Watch Now
           </button>
           <button
             onClick={onToggleList}
-            className="p-2.5 bg-zinc-900/60 border border-zinc-800/80 rounded-lg text-white hover:bg-zinc-800 hover:border-amber-500/50 transition-all"
+            className="p-2 bg-zinc-900/60 border border-zinc-800/80 rounded-lg text-white hover:bg-zinc-800 hover:border-amber-500/50 transition-all"
           >
             {isInList ? (
-              <Bookmark className="w-5 h-5 text-amber-400 fill-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
+              <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
             ) : (
-              <Plus className="w-5 h-5" />
+              <Plus className="w-4 h-4" />
             )}
           </button>
         </div>
-        <div className="flex items-center gap-2 text-[11px] font-semibold text-zinc-500 pt-1">
+        <div className="flex items-center gap-2 text-[10px] md:text-[11px] font-semibold text-zinc-500 pt-0.5">
           <span className="text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded">95% Match</span>
           <span className="bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">
             {anime?.type || "TV Series"}
@@ -198,45 +186,47 @@ function HeroSection({ anime, onPrev, onNext, onWatch, onToggleList, isInList }:
 
 function GenreFilter({ genres, activeGenre, onSelect, showAll, onToggleShowAll }: any) {
   return (
-    <section className="overflow-x-auto flex gap-2 scrollbar-none pb-0.5">
+    <section className="overflow-x-auto flex gap-1.5 md:gap-2 scrollbar-none pb-0.5 px-0">
       {genres.map((g: any, i: number) => (
         <button
           key={i}
           onClick={() => { if (g.name === "More") onToggleShowAll(); else onSelect(g.name); }}
-          className={`px-3.5 py-1.5 border rounded-md text-xs font-medium whitespace-nowrap transition-all duration-200 flex items-center gap-1.5 ${
+          className={`px-2.5 md:px-3.5 py-1 md:py-1.5 border rounded-md text-[10px] md:text-xs font-medium whitespace-nowrap transition-all duration-200 flex items-center gap-1 ${
             activeGenre === g.name ? "bg-amber-500 border-amber-500 text-black shadow-[0_0_10px_rgba(245,158,11,0.3)]" : "bg-[#0b0c14] border-zinc-900/80 hover:border-amber-500/50 text-zinc-400 hover:text-amber-400"
           }`}
         >
-          <span>{g.icon}</span> {g.name}
+          <span className="text-xs md:text-base">{g.icon}</span> <span className="hidden md:inline">{g.name}</span>
+          <span className="md:hidden">{g.name === "All" ? "All" : g.name === "More" ? "More" : g.name.substring(0, 6)}</span>
         </button>
       ))}
     </section>
   );
 }
 
+// ============================================================
+// CHANGED: AnimeCard – removed "TOP" tag, only keep rank if provided
+// ============================================================
 function AnimeCard({ anime, onPlay, onToggleList, isInList, rank }: any) {
   return (
-    <div className="group space-y-1.5 flex-shrink-0 w-[120px] md:w-[150px]">
+    <div className="group space-y-1 flex-shrink-0 w-[110px] md:w-[150px]">
       <div className="relative aspect-[3/4.2] bg-zinc-900 rounded-lg overflow-hidden border border-zinc-900 group-hover:border-amber-500/30 transition-all cursor-pointer" onClick={onPlay}>
         <img src={getSafeImage(anime.image)} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt={anime.title} />
         {rank ? (
-          <span className="absolute top-2 left-2 bg-black/50 backdrop-blur-sm text-white text-sm font-black px-2.5 py-0.5 rounded-md shadow-lg">
+          <span className="absolute top-1.5 left-1.5 bg-black/50 backdrop-blur-sm text-white text-xs md:text-sm font-black px-2 py-0.5 rounded-md shadow-lg">
             #{rank}
           </span>
-        ) : (
-          <span className="absolute top-1 left-1 bg-amber-500 text-black text-[8px] font-black px-1 rounded">TOP</span>
-        )}
-        <button onClick={(e) => { e.stopPropagation(); onToggleList(); }} className="absolute top-1 right-1 p-1 bg-black/60 rounded-full text-white/70 hover:text-amber-400 transition-colors z-10">
-          <Bookmark className={`w-3 h-3 ${isInList ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]' : ''}`} />
+        ) : null}
+        <button onClick={(e) => { e.stopPropagation(); onToggleList(); }} className="absolute top-1 right-1 p-0.5 md:p-1 bg-black/60 rounded-full text-white/70 hover:text-amber-400 transition-colors z-10">
+          <Bookmark className={`w-2.5 h-2.5 md:w-3 md:h-3 ${isInList ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]' : ''}`} />
         </button>
         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-          <div className="w-7 h-7 bg-amber-500 rounded-full flex items-center justify-center cursor-pointer hover:bg-amber-600 transition-colors">
-            <Play className="w-3 h-3 text-black fill-current ml-0.5" />
+          <div className="w-6 h-6 md:w-7 md:h-7 bg-amber-500 rounded-full flex items-center justify-center cursor-pointer hover:bg-amber-600 transition-colors">
+            <Play className="w-2.5 h-2.5 md:w-3 md:h-3 text-black fill-current ml-0.5" />
           </div>
         </div>
       </div>
-      <h4 className="text-[11px] font-bold text-zinc-200 truncate group-hover:text-amber-400 cursor-pointer">{anime.title}</h4>
-      <div className="flex justify-between text-[10px] text-zinc-500">
+      <h4 className="text-[10px] md:text-[11px] font-bold text-zinc-200 truncate group-hover:text-amber-400 cursor-pointer">{anime.title}</h4>
+      <div className="flex justify-between text-[8px] md:text-[10px] text-zinc-500">
         <span>{anime.type}</span>
         <span className="text-amber-400">★ {anime.score}</span>
       </div>
@@ -244,21 +234,23 @@ function AnimeCard({ anime, onPlay, onToggleList, isInList, rank }: any) {
   );
 }
 
+// ============================================================
+// CHANGED: EpisodeCard – removed "NEW" tag entirely
+// ============================================================
 function EpisodeCard({ episode, anime, onPlay }: any) {
   return (
-    <div className="group space-y-1.5 flex-shrink-0 w-[120px] md:w-[150px]">
+    <div className="group space-y-1 flex-shrink-0 w-[110px] md:w-[150px]">
       <div className="relative aspect-[3/4.2] bg-zinc-900 border border-zinc-900 rounded-lg overflow-hidden group-hover:border-amber-500/30 transition-all cursor-pointer" onClick={onPlay}>
         <img src={getSafeImage(anime?.image)} className="w-full h-full object-cover group-hover:scale-105" alt={anime?.title || "Anime"} />
-        <span className="absolute top-1 left-1 bg-blue-600 text-[8px] font-black px-1 rounded text-white">NEW</span>
-        <span className="absolute bottom-1 right-1 bg-black/80 text-[8px] font-bold text-zinc-400 px-1 rounded">EP {episode.number}</span>
+        <span className="absolute bottom-1 right-1 bg-black/80 text-[7px] md:text-[8px] font-bold text-zinc-400 px-1 rounded">EP {episode.number}</span>
         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-          <div className="w-7 h-7 bg-amber-500 rounded-full flex items-center justify-center cursor-pointer hover:bg-amber-600 transition-colors">
-            <Play className="w-3 h-3 text-black fill-current ml-0.5" />
+          <div className="w-6 h-6 md:w-7 md:h-7 bg-amber-500 rounded-full flex items-center justify-center cursor-pointer hover:bg-amber-600 transition-colors">
+            <Play className="w-2.5 h-2.5 md:w-3 md:h-3 text-black fill-current ml-0.5" />
           </div>
         </div>
       </div>
-      <h4 className="text-[11px] font-bold text-zinc-200 truncate group-hover:text-amber-400 cursor-pointer">{anime?.title || "Unknown"}</h4>
-      <p className="text-[10px] text-zinc-500 truncate">{episode.title || `Episode ${episode.number}`}</p>
+      <h4 className="text-[10px] md:text-[11px] font-bold text-zinc-200 truncate group-hover:text-amber-400 cursor-pointer">{anime?.title || "Unknown"}</h4>
+      <p className="text-[8px] md:text-[10px] text-zinc-500 truncate">{episode.title || `Episode ${episode.number}`}</p>
     </div>
   );
 }
@@ -266,11 +258,11 @@ function EpisodeCard({ episode, anime, onPlay }: any) {
 function SectionHeader({ title, icon, onViewAll }: any) {
   return (
     <div className="flex justify-between items-center">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-        {icon} {title}
+      <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+        <span className="text-xs md:text-base">{icon}</span> {title}
       </h3>
       {onViewAll && (
-        <button onClick={onViewAll} className="text-[11px] font-semibold text-amber-500 hover:text-amber-400">View all</button>
+        <button onClick={onViewAll} className="text-[10px] md:text-[11px] font-semibold text-amber-500 hover:text-amber-400">View all</button>
       )}
     </div>
   );
@@ -284,15 +276,15 @@ function FullListOverlay({ type, title, items, onClose, onPlay, onToggleList, is
 
   return (
     <div className="fixed inset-0 z-50 bg-[#06070d] overflow-y-auto">
-      <div className="max-w-[1400px] mx-auto min-h-screen p-4 md:p-6">
-        <div className="flex items-center justify-between mb-6 sticky top-0 bg-[#06070d] z-10 py-2">
-          <div className="flex items-center gap-3">
-            <button onClick={onClose} className="p-2 bg-zinc-900/60 rounded-xl text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
-            <h2 className="text-xl font-black text-white">{title}</h2>
+      <div className="max-w-[1400px] mx-auto min-h-screen p-3 md:p-6">
+        <div className="flex items-center justify-between mb-4 sticky top-0 bg-[#06070d] z-10 py-2">
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="p-1.5 md:p-2 bg-zinc-900/60 rounded-xl text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
+            <h2 className="text-lg md:text-xl font-black text-white">{title}</h2>
           </div>
           <span className="text-xs text-zinc-500">{items.length} items</span>
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 md:gap-3">
           {items.map((item: any) => (
             <AnimeCard
               key={item.id}
@@ -357,19 +349,20 @@ export default function HomePage() {
     }
   }, [user]);
 
-  // ---- Background API fetch ----
+  // ---- Background API fetch (uses Cloudflare) ----
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [animeRes, episodesRes, scheduleRes, newsRes, featuredRes, newlyAddedRes] =
           await Promise.all([
-            fetch('/api/anime').then(r => r.json()),
-            fetch('/api/episodes').then(r => r.json()),
-            fetch('/api/schedule').then(r => r.json()),
-            fetch('/api/news').then(r => r.json()),
-            fetch('/api/featured').then(r => r.json()),
-            fetch('/api/newly-added').then(r => r.json()),
+            CloudflareAPI.getAnime(),
+            CloudflareAPI.getEpisodes(),
+            CloudflareAPI.getSchedule(),
+            CloudflareAPI.getNews(),
+            CloudflareAPI.getFeatured(),
+            CloudflareAPI.getNewlyAdded(),
           ]);
+
         const freshAnime = animeRes.anime || [];
         const freshEpisodes = episodesRes.episodes || [];
         const freshSchedule = scheduleRes.schedule || [];
@@ -393,7 +386,7 @@ export default function HomePage() {
           newlyAddedIds: freshNewlyAdded,
         });
       } catch (error) {
-        console.error('Failed to fetch data:', error);
+        console.error('Failed to fetch data from Cloudflare:', error);
       } finally {
         setLoading(false);
       }
@@ -401,7 +394,7 @@ export default function HomePage() {
     fetchData();
   }, []);
 
-  // ---- Fetch user data from Supabase ----
+  // ---- Fetch user data ----
   useEffect(() => {
     if (!user) {
       setRawWatchHistory([]);
@@ -580,7 +573,7 @@ export default function HomePage() {
     return [...genreFiltered]
       .filter(a => (a.score || 0) >= 7)
       .sort((a, b) => (b.score || 0) - (a.score || 0))
-      .slice(0, 12);   // changed from 6 to 12
+      .slice(0, 12);
   }, [genreFiltered]);
 
   const trendingAnime = useMemo(() => {
@@ -607,7 +600,7 @@ export default function HomePage() {
       const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
       if (dateA && dateB) return dateB - dateA;
       return (parseInt(b.id) - parseInt(a.id));
-    }).slice(0, 12);   // changed from 10 to 12
+    }).slice(0, 12);
   }, [episodesWithLang, displayAnime]);
 
   const publishedNews = newsItems.filter(n => n.status === 'published').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -674,12 +667,12 @@ export default function HomePage() {
   // ---- Skeleton ----
   if (loading && !animeList.length) {
     return (
-      <div className="max-w-[1400px] mx-auto w-full px-4 md:px-6 py-5 space-y-6">
-        <div className="h-80 bg-zinc-900 rounded-2xl animate-pulse" />
+      <div className="max-w-[1400px] mx-auto w-full px-3 md:px-6 py-4 space-y-5">
+        <div className="h-[300px] md:h-80 bg-zinc-900 rounded-2xl animate-pulse" />
         <div className="flex gap-2 overflow-x-auto">
-          {[1,2,3,4,5,6,7].map(i => <div key={i} className="h-8 w-20 bg-zinc-900 rounded-full animate-pulse" />)}
+          {[1,2,3,4,5,6,7].map(i => <div key={i} className="h-7 w-16 bg-zinc-900 rounded-full animate-pulse" />)}
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 md:gap-4">
           {[1,2,3,4,5,6].map(i => <div key={i} className="h-48 bg-zinc-900 rounded-xl animate-pulse" />)}
         </div>
       </div>
@@ -691,10 +684,7 @@ export default function HomePage() {
     return (
       <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-amber-500 flex flex-col">
         <main className="flex-1 w-full max-w-4xl mx-auto px-4 md:px-8 py-6 space-y-6 pb-24 md:pb-12">
-          <button
-            onClick={handleCloseNews}
-            className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group"
-          >
+          <button onClick={handleCloseNews} className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group">
             <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
             <span className="text-sm font-bold">Back to Home</span>
           </button>
@@ -707,12 +697,7 @@ export default function HomePage() {
             <div className="p-6 md:p-10 space-y-4">
               <div className="flex items-center gap-3 text-[10px] text-zinc-500">
                 <span>{selectedNews.date || 'Just now'}</span>
-                {selectedNews.author && (
-                  <>
-                    <span className="text-zinc-700">•</span>
-                    <span>{selectedNews.author}</span>
-                  </>
-                )}
+                {selectedNews.author && (<><span className="text-zinc-700">•</span><span>{selectedNews.author}</span></>)}
               </div>
               <h1 className="text-2xl md:text-4xl font-black text-white leading-tight">{selectedNews.title}</h1>
               <div className="prose prose-invert prose-sm md:prose-base max-w-none text-zinc-300 leading-relaxed whitespace-pre-wrap">
@@ -728,7 +713,6 @@ export default function HomePage() {
   // ---- Main Dashboard ----
   return (
     <>
-      {/* Full List Overlay */}
       {fullList && (
         <FullListOverlay
           type={fullList.type}
@@ -741,7 +725,6 @@ export default function HomePage() {
         />
       )}
 
-      {/* ===== FULL‑WIDTH HERO (outside max‑width container) ===== */}
       <HeroSection
         anime={featuredAnime}
         onPrev={goToPrevHero}
@@ -751,10 +734,9 @@ export default function HomePage() {
         isInList={featuredAnime ? isInList(featuredAnime) : false}
       />
 
-      {/* Everything else inside the max‑width container */}
-      <div className="max-w-[1400px] mx-auto w-full px-0 md:px-6 py-5 space-y-6">
+      <div className="max-w-[1400px] mx-auto w-full px-0 md:px-6 py-4 md:py-5 space-y-5 md:space-y-6">
         {/* Genre Filter */}
-        <div className="px-4 md:px-0">
+        <div className="px-3 md:px-0">
           <GenreFilter
             genres={displayedGenres}
             activeGenre={activeGenre}
@@ -765,16 +747,16 @@ export default function HomePage() {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6 items-start w-full">
-          <div className="w-full lg:w-[70%] flex flex-col gap-6">
+          <div className="w-full lg:w-[70%] flex flex-col gap-5 md:gap-6">
             
             {/* Newly Added – 7 items */}
-            <section className="space-y-3 px-4 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
+            <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <SectionHeader
                 title="Newly Added"
                 icon="🆕"
                 onViewAll={() => setFullList({ type: 'newlyAdded', title: 'Newly Added' })}
               />
-              <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+              <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
                 {newlyAdded.slice(0, 7).map((anime, index) => (
                   <AnimeCard
                     key={anime.id}
@@ -789,13 +771,13 @@ export default function HomePage() {
             </section>
 
             {/* Trending – 12 items */}
-            <section className="space-y-3 px-4 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
+            <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <SectionHeader
                 title={`Trending Now ${activeGenre !== 'All' ? `in ${activeGenre}` : ''}`}
-                icon={<Flame className="w-3.5 h-3.5 text-amber-500" />}
+                icon={<Flame className="w-3 h-3 md:w-3.5 md:h-3.5 text-amber-500" />}
                 onViewAll={() => setFullList({ type: 'trending', title: 'Trending Now' })}
               />
-              <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+              <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
                 {trendingAnime.slice(0, 12).map(anime => (
                   <AnimeCard
                     key={anime.id}
@@ -809,13 +791,13 @@ export default function HomePage() {
             </section>
 
             {/* Latest Updates – 12 items */}
-            <section className="space-y-3 px-4 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
+            <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <SectionHeader
                 title="Latest Updates"
                 icon="⚡"
                 onViewAll={() => setFullList({ type: 'updates', title: 'Latest Updates' })}
               />
-              <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+              <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
                 {latestEpisodes.slice(0, 12).map(ep => {
                   const anime = displayAnime.find(a => a.id === ep.anime_id);
                   return (
@@ -831,9 +813,9 @@ export default function HomePage() {
             </section>
 
             {/* Popular Shows – 12 items */}
-            <section className="space-y-3 px-4 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
+            <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pb-1 border-b border-zinc-900/40">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   ⭐ Popular Shows {activeGenre !== 'All' && `- ${activeGenre}`}
                 </h3>
                 <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
@@ -842,7 +824,7 @@ export default function HomePage() {
                       <button
                         key={f}
                         onClick={() => setPopularTypeFilter(f)}
-                        className={`text-[10px] font-bold px-2.5 py-1 rounded transition-all duration-200 ${
+                        className={`text-[9px] md:text-[10px] font-bold px-2 py-0.5 md:px-2.5 md:py-1 rounded transition-all duration-200 ${
                           popularTypeFilter === f ? "bg-amber-500 text-black shadow-[0_0_6px_rgba(245,158,11,0.3)]" : "text-zinc-500 hover:text-amber-400"
                         }`}
                       >
@@ -852,7 +834,7 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-              <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+              <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
                 {popularAnime.slice(0, 12).map(anime => (
                   <AnimeCard
                     key={anime.id}
@@ -866,13 +848,13 @@ export default function HomePage() {
             </section>
 
             {/* Top Rated – 12 items */}
-            <section className="space-y-3 px-4 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
+            <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <SectionHeader
                 title="Top Rated"
                 icon="🏆"
                 onViewAll={() => setFullList({ type: 'topRated', title: 'Top Rated' })}
               />
-              <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+              <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
                 {topRated.slice(0, 12).map(anime => (
                   <AnimeCard
                     key={anime.id}
@@ -886,16 +868,16 @@ export default function HomePage() {
             </section>
 
             {/* Most Watched + Schedule Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-4 md:px-0">
-              <div className="space-y-3 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">📊 Most Watched</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 px-3 md:px-0">
+              <div className="space-y-2 md:space-y-3 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
+                <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400">📊 Most Watched</h3>
                 <div className="flex flex-col gap-2">
                   {mostWatched.map((anime, idx) => (
-                    <div key={anime.id} className="flex items-center gap-3 bg-[#0d0e1a]/40 p-2 rounded-lg hover:border-amber-500/30 group cursor-pointer" onClick={() => handlePlay(anime)}>
-                      <span className="text-sm font-black text-zinc-600 group-hover:text-amber-500 w-5">{String(idx+1).padStart(2,'0')}</span>
-                      <img src={getSafeImage(anime.image)} className="w-9 h-9 object-cover rounded-md" alt={anime.title} />
-                      <div className="min-w-0 flex-1"><h4 className="text-[11px] font-bold truncate">{anime.title}</h4></div>
-                      <span className="text-[10px] text-amber-400">★ {anime.score}</span>
+                    <div key={anime.id} className="flex items-center gap-2 bg-[#0d0e1a]/40 p-2 rounded-lg hover:border-amber-500/30 group cursor-pointer" onClick={() => handlePlay(anime)}>
+                      <span className="text-xs md:text-sm font-black text-zinc-600 group-hover:text-amber-500 w-5">{String(idx+1).padStart(2,'0')}</span>
+                      <img src={getSafeImage(anime.image)} className="w-8 h-8 md:w-9 md:h-9 object-cover rounded-md" alt={anime.title} />
+                      <div className="min-w-0 flex-1"><h4 className="text-[10px] md:text-[11px] font-bold truncate">{anime.title}</h4></div>
+                      <span className="text-[9px] md:text-[10px] text-amber-400">★ {anime.score}</span>
                     </div>
                   ))}
                 </div>
@@ -924,16 +906,16 @@ export default function HomePage() {
             </div>
 
             {/* ==================== MOBILE ONLY SECTIONS ==================== */}
-            <div className="block md:hidden space-y-6">
+            <div className="block md:hidden space-y-5">
               
               {/* Continue Watching */}
-              <section className="space-y-3 px-4">
+              <section className="space-y-2 px-3">
                 <SectionHeader
                   title="Continue Watching"
                   icon="📺"
                   onViewAll={goToWatchHistory}
                 />
-                <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+                <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
                   {!user ? (
                     <div className="text-xs text-zinc-500 py-4 w-full text-center">
                       <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">
@@ -948,16 +930,16 @@ export default function HomePage() {
                     <p className="text-xs text-zinc-500 py-4 w-full text-center">Start watching an episode to see it here.</p>
                   ) : (
                     continueWatching.map((item, i) => (
-                      <div key={i} className="flex-shrink-0 w-[140px] space-y-1.5 cursor-pointer" onClick={() => handlePlay({ id: item.animeId })}>
+                      <div key={i} className="flex-shrink-0 w-[130px] space-y-1 cursor-pointer" onClick={() => handlePlay({ id: item.animeId })}>
                         <div className="relative aspect-video bg-zinc-900 rounded-lg overflow-hidden">
                           <img src={item.animeImage} className="w-full h-full object-cover opacity-80" alt="" />
                           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                            <Play className="w-5 h-5 text-white fill-current" />
+                            <Play className="w-4 h-4 text-white fill-current" />
                           </div>
                         </div>
-                        <h4 className="text-[11px] font-bold text-zinc-200 truncate">{item.animeTitle}</h4>
-                        <p className="text-[9px] text-zinc-500">EP {item.epNumber}</p>
-                        <div className="h-1 bg-zinc-900 rounded-full">
+                        <h4 className="text-[10px] font-bold text-zinc-200 truncate">{item.animeTitle}</h4>
+                        <p className="text-[8px] text-zinc-500">EP {item.epNumber}</p>
+                        <div className="h-0.5 bg-zinc-900 rounded-full">
                           <div className="h-full bg-amber-500" style={{ width: `${item.progress}%` }} />
                         </div>
                       </div>
@@ -967,13 +949,13 @@ export default function HomePage() {
               </section>
 
               {/* My Watchlist */}
-              <section className="space-y-3 px-4">
+              <section className="space-y-2 px-3">
                 <SectionHeader
                   title="My Watchlist"
                   icon="🔖"
                   onViewAll={goToMyList}
                 />
-                <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+                <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
                   {!user ? (
                     <div className="text-xs text-zinc-500 py-4 w-full text-center">
                       <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">
@@ -988,11 +970,11 @@ export default function HomePage() {
                     <p className="text-xs text-zinc-500 py-4 w-full text-center">Bookmark anime to see them here.</p>
                   ) : (
                     watchlistItems.map((item) => (
-                      <div key={item.id} className="flex-shrink-0 w-[100px] space-y-1 cursor-pointer" onClick={() => handlePlay(item)}>
+                      <div key={item.id} className="flex-shrink-0 w-[90px] space-y-1 cursor-pointer" onClick={() => handlePlay(item)}>
                         <div className="relative aspect-[3/4] bg-zinc-900 rounded-lg overflow-hidden border border-zinc-900">
                           <img src={item.image} className="w-full h-full object-cover" alt="" />
                         </div>
-                        <h4 className="text-[10px] font-bold text-zinc-200 truncate">{item.title}</h4>
+                        <h4 className="text-[9px] font-bold text-zinc-200 truncate">{item.title}</h4>
                       </div>
                     ))
                   )}
@@ -1000,16 +982,16 @@ export default function HomePage() {
               </section>
 
               {/* Anime News – 5 items for mobile */}
-              <section className="space-y-3 px-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">📰 Anime News</h3>
-                <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+              <section className="space-y-2 px-3">
+                <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400">📰 Anime News</h3>
+                <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
                   {publishedNews.slice(0, 5).map((n) => (
-                    <div key={n.id} onClick={() => handleNewsClick(n)} className="flex-shrink-0 w-[220px] bg-[#0d0e1a]/40 border border-zinc-900/60 p-3 rounded-xl flex gap-3 cursor-pointer hover:border-amber-500/30 transition-all">
-                      {n.image && <img src={getSafeImage(n.image)} alt="" className="w-16 h-16 object-cover rounded-lg shrink-0" />}
+                    <div key={n.id} onClick={() => handleNewsClick(n)} className="flex-shrink-0 w-[200px] bg-[#0d0e1a]/40 border border-zinc-900/60 p-2.5 rounded-xl flex gap-2.5 cursor-pointer hover:border-amber-500/30 transition-all">
+                      {n.image && <img src={getSafeImage(n.image)} alt="" className="w-14 h-14 object-cover rounded-lg shrink-0" />}
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-[11px] font-bold text-zinc-200 line-clamp-2">{n.title}</h4>
-                        <p className="text-[9px] text-zinc-400 mt-1 line-clamp-2">{n.content}</p>
-                        <p className="text-[8px] text-zinc-600 mt-1">{n.date}</p>
+                        <h4 className="text-[10px] font-bold text-zinc-200 line-clamp-2">{n.title}</h4>
+                        <p className="text-[8px] text-zinc-400 mt-1 line-clamp-2">{n.content}</p>
+                        <p className="text-[7px] text-zinc-600 mt-1">{n.date}</p>
                       </div>
                     </div>
                   ))}
@@ -1017,9 +999,9 @@ export default function HomePage() {
               </section>
 
               {/* Recommended */}
-              <section className="space-y-3 px-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">🎯 Recommended for You</h3>
-                <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+              <section className="space-y-2 px-3">
+                <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400">🎯 Recommended</h3>
+                <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
                   {trendingAnime.slice(0, 4).map(anime => (
                     <AnimeCard
                       key={anime.id}
@@ -1035,21 +1017,13 @@ export default function HomePage() {
             {/* ==================== END MOBILE ONLY SECTIONS ==================== */}
           </div>
 
-          {/* ==================== DESKTOP SIDEBAR ==================== */}
+          {/* ==================== DESKTOP SIDEBAR (unchanged) ==================== */}
           <div className="hidden lg:flex lg:w-[30%] flex-col gap-5 sticky top-20">
-            
-            {/* Continue Watching */}
             <div className="bg-[#0a0b12] border border-zinc-900/60 rounded-xl p-4 space-y-3">
-              <SectionHeader
-                title="Continue Watching"
-                icon="📺"
-                onViewAll={goToWatchHistory}
-              />
+              <SectionHeader title="Continue Watching" icon="📺" onViewAll={goToWatchHistory} />
               {!user ? (
                 <div className="text-xs text-zinc-500 py-4 text-center">
-                  <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">
-                    Login
-                  </button> to see your continue watching.
+                  <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">Login</button> to see your continue watching.
                 </div>
               ) : !userDataLoaded || animeList.length === 0 ? (
                 <div className="text-xs text-zinc-500 py-4 text-center flex items-center justify-center gap-2">
@@ -1074,27 +1048,18 @@ export default function HomePage() {
                           <div className="h-full bg-amber-500" style={{ width: `${item.progress}%` }} />
                         </div>
                       </div>
-                      <span className="text-[10px] font-semibold text-zinc-500 shrink-0">
-                        {item.progress}%
-                      </span>
+                      <span className="text-[10px] font-semibold text-zinc-500 shrink-0">{item.progress}%</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* My Watchlist */}
             <div className="bg-[#0a0b12] border border-zinc-900/60 rounded-xl p-4 space-y-3">
-              <SectionHeader
-                title="My Watchlist"
-                icon="🔖"
-                onViewAll={goToMyList}
-              />
+              <SectionHeader title="My Watchlist" icon="🔖" onViewAll={goToMyList} />
               {!user ? (
                 <div className="text-xs text-zinc-500 py-4 text-center">
-                  <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">
-                    Login
-                  </button> to add bookmarks.
+                  <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">Login</button> to add bookmarks.
                 </div>
               ) : !userDataLoaded || animeList.length === 0 ? (
                 <div className="text-xs text-zinc-500 py-4 text-center flex items-center justify-center gap-2">
@@ -1119,7 +1084,6 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* Anime News (desktop stays 3) */}
             <div className="bg-[#0a0b12] border border-zinc-900/60 rounded-xl p-4 space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">📰 Anime News</h3>
               <div className="flex flex-col gap-3">
@@ -1133,7 +1097,6 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-          {/* ==================== END DESKTOP SIDEBAR ==================== */}
         </div>
       </div>
     </>
