@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -18,16 +19,12 @@ interface LegalPageProps {
 }
 
 // ============================================================
-// COMPONENT
+// 内层组件（包含所有原有逻辑）
 // ============================================================
-export default function LegalPage({
-  navigateTo,
-  initialTab = 'privacy',
-}: LegalPageProps) {
+function LegalContent({ navigateTo, initialTab = 'privacy' }: LegalPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Get active tab from the URL query parameter – will update whenever the URL changes
   const activeTab: LegalTab = (() => {
     const tab = searchParams.get('tab') as LegalTab | null;
     if (tab && (tab === 'privacy' || tab === 'terms' || tab === 'disclaimer')) return tab;
@@ -40,7 +37,7 @@ export default function LegalPage({
 
   return (
     <div className="min-h-screen bg-[#0a0a0e] text-zinc-100 font-sans selection:bg-red-600 flex flex-col">
-      {/* Tabs – simple underlined text */}
+      {/* Tabs */}
       <div className="py-4 px-4">
         <div className="max-w-4xl mx-auto flex gap-6 overflow-x-auto scrollbar-none">
           <button
@@ -76,18 +73,15 @@ export default function LegalPage({
         </div>
       </div>
 
-      {/* Content – only main heading has red left border */}
+      {/* Content */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 pb-24 md:pb-12">
         {/* PRIVACY POLICY */}
         {activeTab === 'privacy' && (
           <div className="space-y-8">
-            {/* Main heading with red left border */}
             <div className="border-l-4 border-red-500 pl-4">
               <h1 className="text-xl md:text-2xl font-black tracking-tight text-zinc-100">Privacy Policy</h1>
               <p className="text-xs text-zinc-500 font-medium mt-1">Last Updated: July 02, 2026</p>
             </div>
-
-            {/* Content sections – no red border */}
             <div className="space-y-6">
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-red-500">1. Information We Collect</h2>
@@ -229,7 +223,6 @@ export default function LegalPage({
                 </div>
               </div>
 
-              {/* emerald notice – kept its green border */}
               <div className="border-l-4 border-emerald-500 pl-4 py-2 text-emerald-400 text-xs font-bold flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
                 By using AnimeTown, you agree to this Privacy Policy.
@@ -245,7 +238,6 @@ export default function LegalPage({
               <h1 className="text-xl md:text-2xl font-black tracking-tight text-zinc-100">Terms of Use</h1>
               <p className="text-xs text-zinc-500 font-medium mt-1">Please read these terms carefully before using our platform.</p>
             </div>
-
             <div className="space-y-6">
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-red-500">1. Acceptance of Terms</h2>
@@ -253,14 +245,12 @@ export default function LegalPage({
                   By accessing and using AnimeTown ("the Website"), you agree to be bound by these Terms of Use. If you disagree with any part of these terms, you do not use our service.
                 </p>
               </div>
-
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-red-500">2. Eligibility</h2>
                 <p className="text-xs text-zinc-400 leading-relaxed">
                   You must be at least 13 years old to use this website. By using AnimeTown, you represent that you meet this age requirement. Users under 18 must have parental consent.
                 </p>
               </div>
-
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-red-500">3. User Account</h2>
                 <div className="text-xs text-zinc-400 space-y-2">
@@ -269,7 +259,6 @@ export default function LegalPage({
                   <p><span className="font-semibold text-zinc-300">3.3 Account Termination:</span> We reserve the right to suspend or terminate accounts that violate these terms or for any other reason at our discretion.</p>
                 </div>
               </div>
-
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-red-500">4. Acceptable Use</h2>
                 <p className="text-xs text-zinc-400">You agree NOT to:</p>
@@ -281,7 +270,6 @@ export default function LegalPage({
                   <li>Create multiple fraudulent accounts.</li>
                 </ul>
               </div>
-
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-red-500">5. Intellectual Property</h2>
                 <div className="text-xs text-zinc-400 space-y-2">
@@ -290,28 +278,24 @@ export default function LegalPage({
                   <p><span className="font-semibold text-zinc-300">5.3 User-Generated Content:</span> Any comments or reviews you post become the property of AnimeTown.</p>
                 </div>
               </div>
-
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-red-500">6. Links to Third-Party Sites</h2>
                 <p className="text-xs text-zinc-400 leading-relaxed">
                   AnimeTown provides link references exclusively for your convenience. We do not endorse or control these sites and are not responsible for their content or practices.
                 </p>
               </div>
-
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-red-500">7. Disclaimer of Warranties</h2>
                 <p className="text-xs text-zinc-500 font-bold tracking-wide uppercase">
                   "THE WEBSITE IS PROVIDED 'AS IS' WITHOUT ANY WARRANTIES, EXPRESS OR IMPLIED."
                 </p>
               </div>
-
               <div className="space-y-3">
                 <h2 className="text-sm font-bold text-red-500">8. Limitation of Liability</h2>
                 <p className="text-xs text-zinc-500 font-bold uppercase tracking-wide leading-relaxed">
                   "TO THE FULLEST EXTENT PERMITTED BY LAW, ANIMETOWN SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES."
                 </p>
               </div>
-
               <div className="space-y-4">
                 <h2 className="text-sm font-bold text-red-500">9. Contact Us</h2>
                 <div className="flex items-center gap-2 text-xs text-zinc-300">
@@ -330,7 +314,6 @@ export default function LegalPage({
               <h1 className="text-xl md:text-2xl font-black tracking-tight text-zinc-100">Disclaimer & DMCA Policy</h1>
               <p className="text-xs text-zinc-500 font-medium mt-1">Intellectual Property & Content Limitation Notice.</p>
             </div>
-
             <div className="space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
@@ -352,7 +335,6 @@ export default function LegalPage({
                   </div>
                 </div>
               </div>
-
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
                   <ShieldAlert className="w-4 h-4 text-red-500" />
@@ -378,7 +360,6 @@ export default function LegalPage({
                   </div>
                 </div>
               </div>
-
               <div className="border-l-4 border-rose-500 pl-4 py-2 text-rose-400 text-xs font-bold flex items-start gap-3 leading-relaxed">
                 <span className="text-base leading-none shrink-0">🛑</span>
                 <div>
@@ -391,5 +372,16 @@ export default function LegalPage({
         )}
       </main>
     </div>
+  );
+}
+
+// ============================================================
+// 默认导出：用 Suspense 包裹
+// ============================================================
+export default function LegalPage(props: LegalPageProps) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0a0a0e] flex items-center justify-center text-zinc-400 text-sm">Loading legal information...</div>}>
+      <LegalContent {...props} />
+    </Suspense>
   );
 }
