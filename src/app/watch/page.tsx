@@ -210,6 +210,10 @@ function WatchContent() {
   const [reportSuccess, setReportSuccess] = useState(false);
   const [reporting, setReporting] = useState(false);
 
+  // ---------- back button visibility ----------
+  const [showBackButton, setShowBackButton] = useState(true);
+  const backButtonTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const videoInitializedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -329,8 +333,37 @@ function WatchContent() {
       setControlsVisible(true);
     }
   };
-  useEffect(() => { resetControlsTimeout(); return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); }; }, [isMobile, isNative, playerLoading, playerError, isPlaying]);
-  const handleInteraction = () => resetControlsTimeout();
+
+  // ---- Back button timeout ----
+  const resetBackButtonTimeout = () => {
+    setShowBackButton(true);
+    if (backButtonTimeoutRef.current) clearTimeout(backButtonTimeoutRef.current);
+    backButtonTimeoutRef.current = setTimeout(() => {
+      setShowBackButton(false);
+    }, 3000);
+  };
+
+  // ---- Combined interaction handler ----
+  const handleInteraction = () => {
+    resetControlsTimeout();
+    resetBackButtonTimeout();
+  };
+
+  // ---- Initial back button hide after 3s ----
+  useEffect(() => {
+    resetBackButtonTimeout();
+    return () => {
+      if (backButtonTimeoutRef.current) clearTimeout(backButtonTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => { 
+    resetControlsTimeout(); 
+    return () => { 
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); 
+    }; 
+  }, [isMobile, isNative, playerLoading, playerError, isPlaying]);
+
   const handleVideoTap = () => { handleInteraction(); togglePlay(); };
 
   // ---- Video toggle (native) ----
@@ -1238,14 +1271,16 @@ function WatchContent() {
           onMouseMove={handleInteraction}
           onTouchStart={handleInteraction}
         >
-          {/* Floating Back Button */}
-          <button
-            onClick={handleBack}
-            className="absolute top-3 left-3 z-40 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+          {/* Floating Back Button – only visible when showBackButton is true */}
+          {showBackButton && (
+            <button
+              onClick={handleBack}
+              className="absolute top-3 left-3 z-40 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
 
           {/* Loading Overlay */}
           {playerLoading && (
