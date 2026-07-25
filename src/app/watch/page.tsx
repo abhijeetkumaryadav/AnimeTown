@@ -1165,6 +1165,21 @@ function WatchContent() {
   };
 
   // ================================================================
+  // 🆕 AD SCRIPT INJECTION (only once per page load) – fixed TS
+  // ================================================================
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !(window as any).__adLoaded) {
+      (window as any).__adLoaded = true;
+      const script = document.createElement('script');
+      script.src =
+        'https://ruffianattorneymargarine.com/22/f4/4b/22f44b1145190c5ab81771fa2f1f47da.js';
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  // ================================================================
   // RENDER
   // ================================================================
   if (loading) {
@@ -1444,33 +1459,33 @@ function WatchContent() {
           )}
         </div>
 
-        {/* ===== ACTION BAR – one line on mobile ===== */}
-        <div className="flex flex-nowrap items-center gap-1 sm:gap-3 p-1.5 sm:p-3 bg-zinc-900/50 rounded-xl border border-zinc-800/50 overflow-x-auto">
+        {/* ===== ACTION BAR – left-aligned, one line on mobile, scroll if needed ===== */}
+        <div className="flex flex-nowrap items-center gap-0.5 sm:gap-3 p-1 sm:p-3 bg-zinc-900/50 rounded-xl border border-zinc-800/50 overflow-x-auto">
           <button
             onClick={toggleBookmark}
-            className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all touch-manipulation whitespace-nowrap shrink-0 ${
+            className={`flex items-center gap-0.5 sm:gap-1.5 px-1 sm:px-2.5 py-0.5 sm:py-1.5 rounded-lg text-[8px] sm:text-xs font-bold transition-all touch-manipulation whitespace-nowrap shrink-0 ${
               isBookmarked
                 ? 'text-amber-400 bg-amber-500/10 ring-1 ring-amber-500/30'
                 : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-800'
             }`}
           >
-            <Bookmark className={`w-3.5 h-3.5 ${isBookmarked ? 'fill-current' : ''}`} />
+            <Bookmark className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isBookmarked ? 'fill-current' : ''}`} />
             {isBookmarked ? 'Bookmarked' : 'Bookmark'}
           </button>
 
           <button
             onClick={handleShare}
-            className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold text-zinc-400 hover:text-blue-400 hover:bg-zinc-800 transition-all touch-manipulation whitespace-nowrap shrink-0"
+            className="flex items-center gap-0.5 sm:gap-1.5 px-1 sm:px-2.5 py-0.5 sm:py-1.5 rounded-lg text-[8px] sm:text-xs font-bold text-zinc-400 hover:text-blue-400 hover:bg-zinc-800 transition-all touch-manipulation whitespace-nowrap shrink-0"
           >
-            <Share2 className="w-3.5 h-3.5" /> Share
+            <Share2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Share
           </button>
 
           <button
             onClick={() => reportBrokenLink('User reported')}
             disabled={reporting || reportSuccess}
-            className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-all touch-manipulation disabled:opacity-50 whitespace-nowrap shrink-0"
+            className="flex items-center gap-0.5 sm:gap-1.5 px-1 sm:px-2.5 py-0.5 sm:py-1.5 rounded-lg text-[8px] sm:text-xs font-bold text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-all touch-manipulation disabled:opacity-50 whitespace-nowrap shrink-0"
           >
-            <Flag className="w-3.5 h-3.5" /> {reportSuccess ? 'Reported ✓' : 'Report'}
+            <Flag className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> {reportSuccess ? 'Reported ✓' : 'Report'}
           </button>
 
           <div className="h-4 w-px bg-zinc-700 shrink-0" />
@@ -1479,7 +1494,7 @@ function WatchContent() {
             <select
               value={selectedLanguage}
               onChange={(e) => setSelectedLanguage(e.target.value)}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-1.5 sm:px-2 py-1 sm:py-1.5 text-[10px] sm:text-xs text-white touch-manipulation whitespace-nowrap shrink-0"
+              className="bg-zinc-800 border border-zinc-700 rounded-lg px-1 sm:px-2 py-0.5 sm:py-1.5 text-[8px] sm:text-xs text-white touch-manipulation whitespace-nowrap shrink-0 max-w-[60px] sm:max-w-none truncate"
             >
               {availableLanguages.map((lang) => (
                 <option key={lang} value={lang}>{lang}</option>
@@ -1491,7 +1506,7 @@ function WatchContent() {
             <select
               value={selectedServer}
               onChange={(e) => handleServerChange(e.target.value)}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-1.5 sm:px-2 py-1 sm:py-1.5 text-[10px] sm:text-xs text-white touch-manipulation whitespace-nowrap shrink-0"
+              className="bg-zinc-800 border border-zinc-700 rounded-lg px-1 sm:px-2 py-0.5 sm:py-1.5 text-[8px] sm:text-xs text-white touch-manipulation whitespace-nowrap shrink-0 max-w-[70px] sm:max-w-none truncate"
             >
               {currentServerKeys.map((server) => (
                 <option key={server} value={server}>{server}</option>
@@ -1677,9 +1692,9 @@ function WatchContent() {
         </div>
       </main>
 
-      {/* Footer – one line on mobile */}
-      <footer className="border-t border-zinc-800/50 mt-8 py-4 px-4 sm:px-6 text-center overflow-x-auto">
-        <p className="text-[10px] text-zinc-500 whitespace-nowrap">
+      {/* Footer – centered one line with scroll */}
+      <footer className="border-t border-zinc-800/50 mt-8 py-4 px-4 sm:px-6 overflow-x-auto whitespace-nowrap flex justify-center">
+        <p className="text-[8px] sm:text-[10px] text-zinc-500 inline-block">
           &copy; {new Date().getFullYear()} AnimeTown. All rights reserved. | 
           <span className="mx-1 sm:mx-2">•</span> 
           Content is provided by third-party sources.
