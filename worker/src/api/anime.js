@@ -1,11 +1,37 @@
 // worker/src/api/anime.js
 
+async function fetchAnimeImageFromJikan(title) {
+  try {
+    // Jikan rate limit: ~60 req/min – small delay to be safe
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const response = await fetch(
+      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(title)}&limit=1`
+    );
+    if (!response.ok) {
+      console.error(`Jikan API error: ${response.status}`);
+      return '';
+    }
+    const data = await response.json();
+    if (data.data && data.data.length > 0) {
+      const first = data.data[0];
+      // Prefer large JPG, fallback to webp
+      return first.images?.jpg?.large_image_url ||
+             first.images?.webp?.large_image_url ||
+             '';
+    }
+    return '';
+  } catch (e) {
+    console.error('Jikan fetch error:', e);
+    return '';
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // CORS headers
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -13,13 +39,12 @@ export default {
       'Content-Type': 'application/json'
     };
 
-    // Handle OPTIONS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
 
     try {
-      // GET /api/anime
+      // ---------- GET (unchanged) ----------
       if (request.method === 'GET') {
         const { results } = await env.DB.prepare(
           'SELECT * FROM animes ORDER BY created_at DESC'
@@ -49,34 +74,28 @@ export default {
         });
       }
 
-      // POST /api/anime
+      // ---------- POST (UPDATED with auto-fetch) ----------
       if (request.method === 'POST') {
-        // Parse the request body directly
         const requestText = await request.text();
         let data = {};
         try {
           data = JSON.parse(requestText);
         } catch (e) {
-          return new Response(JSON.stringify({ 
+          return new Response(JSON.stringify({
             error: 'Invalid JSON body',
-            received: requestText 
+            received: requestText
           }), {
             status: 400,
             headers: corsHeaders
           });
         }
 
-        const id = crypto.randomUUID();
-
-        // Log what we received for debugging
-        console.log('Received data:', JSON.stringify(data));
-
-        // Map fields properly with explicit extraction
+        // Extract fields
         const title = data.title || data.english || data.romaji || 'Untitled';
         const description = data.description || data.synopsis || '';
         const episodes = typeof data.episodes === 'number' ? data.episodes : (parseInt(data.episodes) || 0);
         const genre = data.genre || data.genres || '';
-        const image = data.image || data.coverImage || data.poster || '';
+        let image = data.image || data.coverImage || data.poster || '';
         const popularity = typeof data.popularity === 'number' ? data.popularity : (parseInt(data.popularity) || 0);
         const rank = typeof data.rank === 'number' ? data.rank : (parseInt(data.rank) || 0);
         const score = typeof data.score === 'number' ? data.score : (parseFloat(data.score) || 0);
@@ -87,8 +106,22 @@ export default {
         const type = data.type || 'ANIME';
         const year = typeof data.year === 'number' ? data.year : (parseInt(data.year) || 0);
 
-        // Log what we're inserting
-        console.log('Inserting:', { id, title, episodes, score });
+        // ---- NEW: auto-fetch real image if current one is placeholder ----
+        const placeholderPatterns = ['placeholder', 'default', 'via.placeholder.com', 'dummy'];
+        const isPlaceholder = !image || placeholderPatterns.some(p => image.includes(p));
+        if (isPlaceholder) {
+          const fetchedImage = await fetchAnimeImageFromJikan(title);
+          if (fetchedImage) {
+            image = fetchedImage;
+            console.log(`✅ Auto-fetched image for "${title}": ${image}`);
+          } else {
+            // Optional: set a default fallback image here if you want
+            // image = 'https://your-fallback-image.com/default.jpg';
+            console.log(`⚠️ No image found for "${title}" on Jikan.`);
+          }
+        }
+
+        const id = crypto.randomUUID();
 
         await env.DB.prepare(`
           INSERT INTO animes (
@@ -116,8 +149,8 @@ export default {
 
         return new Response(JSON.stringify({
           success: true,
-          anime: { 
-            id, 
+          anime: {
+            id,
             title,
             description,
             episodes,
@@ -138,7 +171,7 @@ export default {
         });
       }
 
-      // PUT /api/anime
+      // ---------- PUT (unchanged) ----------
       if (request.method === 'PUT') {
         const requestText = await request.text();
         let data = {};
@@ -186,7 +219,7 @@ export default {
         });
       }
 
-      // DELETE /api/anime
+      // ---------- DELETE (unchanged) ----------
       if (request.method === 'DELETE') {
         const requestText = await request.text();
         let data = {};
@@ -215,9 +248,9 @@ export default {
       });
     } catch (error) {
       console.error('Error in anime handler:', error);
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         error: error.message,
-        stack: error.stack 
+        stack: error.stack
       }), {
         status: 500,
         headers: corsHeaders

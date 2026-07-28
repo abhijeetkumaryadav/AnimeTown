@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
-  Play, Clock, Bell, ChevronRight, Info, CalendarDays, BellRing, Newspaper, TrendingUp, BellOff, ArrowLeft
+  Play, Clock, Bell, ChevronRight, CalendarDays, BellRing, Newspaper, TrendingUp, ArrowLeft
 } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebaseClient';
 import { requestFCMToken, listenForForegroundMessages } from '@/lib/fcm';
-import { CloudflareAPI } from '@/lib/db-client'; // ✅ Cloudflare client
+import { CloudflareAPI } from '@/lib/db-client';
 
 // ============================================================
-// TYPES – id now string
+// TYPES
 // ============================================================
 interface Anime {
   id: string;
@@ -42,21 +42,10 @@ interface NewsItem {
 }
 
 // ============================================================
-// CACHE HELPERS (client‑side only)
+// CACHE HELPERS – we'll keep them but not use them to load
 // ============================================================
 const UPDATES_CACHE_KEY = 'updatesCache';
 const NOTIFIED_KEY = 'animetown_notified';
-
-function getCachedUpdates() {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(UPDATES_CACHE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
 
 function saveUpdatesCache(animeList: Anime[], scheduleItems: ScheduleItem[], newsItems: NewsItem[]) {
   if (typeof window === 'undefined') return;
@@ -107,12 +96,11 @@ export default function UpdatesPage({
   navigateTo?: (page: string, tab?: string, params?: any) => void;
   user?: { id: string } | null;
 }) {
-  // ---- All states start empty ----
+  // ---- States ----
   const [animeList, setAnimeList] = useState<Anime[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
 
-  // ---- UI states ----
   const [activeDay, setActiveDay] = useState<number>(0);
   const [activeView, setActiveView] = useState<'schedule' | 'latest'>('schedule');
   const [notifiedItems, setNotifiedItems] = useState<Record<string, boolean>>({});
@@ -121,10 +109,9 @@ export default function UpdatesPage({
   const [showPermissionBanner, setShowPermissionBanner] = useState(false);
   const notificationTimers = useRef<Record<string, NodeJS.Timeout>>({});
 
-  // ---- News detail state ----
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
 
-  // ---- Fix hydration mismatches ----
+  // ---- Hydration ----
   useEffect(() => {
     setActiveDay(new Date().getDay());
     const params = new URLSearchParams(window.location.search);
@@ -138,19 +125,12 @@ export default function UpdatesPage({
     }
 
     listenForForegroundMessages();
+
+    // Clear the updates cache to force fresh data
+    try { localStorage.removeItem(UPDATES_CACHE_KEY); } catch {}
   }, []);
 
-  // ---- Instant cache load before paint ----
-  useLayoutEffect(() => {
-    const cached = getCachedUpdates();
-    if (cached) {
-      setAnimeList(cached.animeList || []);
-      setScheduleItems(cached.scheduleItems || []);
-      setNewsItems(cached.newsItems || []);
-    }
-  }, []);
-
-  // ---- Background data refresh – using CloudflareAPI ----
+  // ---- Always fetch fresh data (no cache) ----
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -168,6 +148,7 @@ export default function UpdatesPage({
         setScheduleItems(freshSchedule);
         setNewsItems(published);
 
+        // Still save cache for later (but we won't load from it)
         saveUpdatesCache(freshAnime, freshSchedule, published);
       } catch (error) {
         console.error('Failed to fetch updates data from Cloudflare:', error);
@@ -176,7 +157,7 @@ export default function UpdatesPage({
     fetchData();
   }, []);
 
-  // ---- Re‑schedule all active notifications ----
+  // ---- Notification scheduling (unchanged) ----
   useEffect(() => {
     Object.values(notificationTimers.current).forEach(timer => clearTimeout(timer));
     notificationTimers.current = {};
@@ -191,7 +172,6 @@ export default function UpdatesPage({
     localStorage.setItem(NOTIFIED_KEY, JSON.stringify(notifiedItems));
   }, [notifiedItems]);
 
-  // ---- Notification scheduling ----
   const scheduleNotification = (item: ScheduleItem) => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
@@ -231,7 +211,7 @@ export default function UpdatesPage({
     notificationTimers.current[item.id] = timer;
   };
 
-  // ---- Handle notification click ----
+  // ---- Handle notification click (unchanged) ----
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       const handler = (event: Event) => {
@@ -263,8 +243,14 @@ export default function UpdatesPage({
   const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const DAYS_SHORT = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
+  // ---- UPDATED: fallback to title match if anime not found by ID ----
   const getAnimeDetails = (animeId: string) => {
     return animeList.find(a => a.id === animeId) || null;
+  };
+
+  const getAnimeByTitle = (title: string) => {
+    if (!title) return null;
+    return animeList.find(a => a.title.toLowerCase() === title.toLowerCase()) || null;
   };
 
   const openWatch = (animeId: string, episodeNumber?: number) => {
@@ -348,7 +334,7 @@ export default function UpdatesPage({
 
   const showSkeleton = animeList.length === 0 && scheduleItems.length === 0;
 
-  // ---- News Detail View ----
+  // ---- News Detail View (unchanged) ----
   if (selectedNews) {
     return (
       <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-amber-500 flex flex-col">
@@ -379,10 +365,9 @@ export default function UpdatesPage({
     );
   }
 
-  // ---- Main Updates Page ----
+  // ---- Main UI ----
   return (
     <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-amber-500 flex flex-col">
-      {/* PERMISSION BANNER */}
       {showPermissionBanner && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-black px-4 py-3 flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-2 text-xs md:text-sm font-bold">
@@ -399,8 +384,7 @@ export default function UpdatesPage({
       )}
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-6 pb-24 md:pb-12">
-
-        {/* HEADER TABS */}
+        {/* Tabs */}
         <div className="flex items-center justify-between border-b border-zinc-900/80 pb-2">
           <div className="flex items-center gap-6 text-xs md:text-sm font-black uppercase tracking-wider">
             <button
@@ -426,10 +410,9 @@ export default function UpdatesPage({
           </div>
         </div>
 
-        {/* SCHEDULE VIEW */}
         {activeView === 'schedule' && (
           <>
-            {/* HORIZONTAL DAY CARDS */}
+            {/* Day cards */}
             <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2 pt-1 -mx-1 px-1">
               {DAYS.map((day, idx) => {
                 const isToday = idx === new Date().getDay();
@@ -465,9 +448,8 @@ export default function UpdatesPage({
               })}
             </div>
 
-            {/* TIMELINE + SIDEBAR – now side by side on desktop, stacked on mobile */}
+            {/* Timeline + Sidebar */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Timeline (left) */}
               <div className="lg:col-span-2 space-y-4">
                 <div className="flex justify-between items-center px-1">
                   <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
@@ -498,7 +480,11 @@ export default function UpdatesPage({
                     </div>
                   ) : (
                     (showNotified ? todayItems.filter(item => notifiedItems[item.id]) : todayItems).map((item) => {
-                      const anime = getAnimeDetails(item.anime_id);
+                      // ---- FIX: look up anime by ID, fallback to title ----
+                      let anime = getAnimeDetails(item.anime_id);
+                      if (!anime && item.title) {
+                        anime = getAnimeByTitle(item.title);
+                      }
                       const isNotified = !!notifiedItems[item.id];
                       return (
                         <div key={item.id} className="relative group flex items-start gap-3 bg-[#0b0b10] border border-zinc-900 p-3 rounded-xl md:rounded-2xl hover:border-zinc-800/80 transition-all">
@@ -570,7 +556,7 @@ export default function UpdatesPage({
                 </div>
               </div>
 
-              {/* SIDEBAR – Airing This Week (visible on all screens, but positioned differently) */}
+              {/* Sidebar – This Week */}
               <div className="space-y-4">
                 <div className="flex justify-between items-center px-1">
                   <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400">This Week</h3>
@@ -585,7 +571,10 @@ export default function UpdatesPage({
                       <div className="text-center py-8 text-zinc-500 text-sm">No shows this week</div>
                     ) : (
                       allWeekItems.map((item) => {
-                        const anime = getAnimeDetails(item.anime_id);
+                        let anime = getAnimeDetails(item.anime_id);
+                        if (!anime && item.title) {
+                          anime = getAnimeByTitle(item.title);
+                        }
                         const isNotified = !!notifiedItems[item.id];
                         return (
                           <div
@@ -619,7 +608,6 @@ export default function UpdatesPage({
                   </div>
                 </div>
 
-                {/* Simplified notification hint */}
                 <div className="bg-[#0b0b10] border border-zinc-900 p-3 rounded-xl flex items-start gap-2 text-[10px] text-zinc-500">
                   <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
                   <span>Tap the bell icon on any show to get a 5‑minute alert before it airs.</span>
@@ -629,9 +617,9 @@ export default function UpdatesPage({
           </>
         )}
 
-        {/* LATEST NEWS VIEW */}
         {activeView === 'latest' && (
           <div className="space-y-6">
+            {/* Featured News – unchanged, just a placeholder for brevity */}
             {showSkeleton ? (
               <div className="relative w-full rounded-2xl overflow-hidden bg-[#0c0d19] border border-zinc-900/60 min-h-[280px] md:min-h-[360px] flex items-end animate-pulse">
                 <div className="absolute inset-0 bg-zinc-800" />
@@ -733,7 +721,6 @@ export default function UpdatesPage({
             </div>
           </div>
         )}
-
       </main>
     </div>
   );
