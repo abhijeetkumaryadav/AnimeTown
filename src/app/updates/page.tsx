@@ -42,7 +42,7 @@ interface NewsItem {
 }
 
 // ============================================================
-// CACHE HELPERS – we'll keep them but not use them to load
+// CACHE HELPERS
 // ============================================================
 const UPDATES_CACHE_KEY = 'updatesCache';
 const NOTIFIED_KEY = 'animetown_notified';
@@ -96,7 +96,6 @@ export default function UpdatesPage({
   navigateTo?: (page: string, tab?: string, params?: any) => void;
   user?: { id: string } | null;
 }) {
-  // ---- States ----
   const [animeList, setAnimeList] = useState<Anime[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
@@ -123,14 +122,11 @@ export default function UpdatesPage({
     if (saved) {
       try { setNotifiedItems(JSON.parse(saved)); } catch {}
     }
-
     listenForForegroundMessages();
-
-    // Clear the updates cache to force fresh data
     try { localStorage.removeItem(UPDATES_CACHE_KEY); } catch {}
   }, []);
 
-  // ---- Always fetch fresh data (no cache) ----
+  // ---- Always fetch fresh data ----
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -147,8 +143,6 @@ export default function UpdatesPage({
         setAnimeList(freshAnime);
         setScheduleItems(freshSchedule);
         setNewsItems(published);
-
-        // Still save cache for later (but we won't load from it)
         saveUpdatesCache(freshAnime, freshSchedule, published);
       } catch (error) {
         console.error('Failed to fetch updates data from Cloudflare:', error);
@@ -157,7 +151,7 @@ export default function UpdatesPage({
     fetchData();
   }, []);
 
-  // ---- Notification scheduling (unchanged) ----
+  // ---- Notification scheduling ----
   useEffect(() => {
     Object.values(notificationTimers.current).forEach(timer => clearTimeout(timer));
     notificationTimers.current = {};
@@ -198,7 +192,7 @@ export default function UpdatesPage({
     if (delay <= 0) return;
 
     const timer = setTimeout(() => {
-      const anime = getAnimeDetails(item.anime_id);
+      const anime = getAnimeDetails(item.anime_id) || getAnimeByTitle(item.title || '');
       new Notification(`🔔 ${anime?.title || item.title || 'Anime'} Starting Soon!`, {
         body: `Episode ${item.episode} airs at ${item.time} (in 5 minutes).`,
         icon: anime?.image || '/favicon.ico',
@@ -211,7 +205,7 @@ export default function UpdatesPage({
     notificationTimers.current[item.id] = timer;
   };
 
-  // ---- Handle notification click (unchanged) ----
+  // ---- Handle notification click ----
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       const handler = (event: Event) => {
@@ -243,7 +237,7 @@ export default function UpdatesPage({
   const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const DAYS_SHORT = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-  // ---- UPDATED: fallback to title match if anime not found by ID ----
+  // ---- Helpers to resolve anime ----
   const getAnimeDetails = (animeId: string) => {
     return animeList.find(a => a.id === animeId) || null;
   };
@@ -251,6 +245,17 @@ export default function UpdatesPage({
   const getAnimeByTitle = (title: string) => {
     if (!title) return null;
     return animeList.find(a => a.title.toLowerCase() === title.toLowerCase()) || null;
+  };
+
+  const getAnimeForScheduleItem = (item: ScheduleItem): Anime | null => {
+    // First try by ID
+    const byId = getAnimeDetails(item.anime_id);
+    if (byId) return byId;
+    // Then by title
+    if (item.title) {
+      return getAnimeByTitle(item.title);
+    }
+    return null;
   };
 
   const openWatch = (animeId: string, episodeNumber?: number) => {
@@ -334,7 +339,7 @@ export default function UpdatesPage({
 
   const showSkeleton = animeList.length === 0 && scheduleItems.length === 0;
 
-  // ---- News Detail View (unchanged) ----
+  // ---- News Detail View ----
   if (selectedNews) {
     return (
       <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-amber-500 flex flex-col">
@@ -480,12 +485,11 @@ export default function UpdatesPage({
                     </div>
                   ) : (
                     (showNotified ? todayItems.filter(item => notifiedItems[item.id]) : todayItems).map((item) => {
-                      // ---- FIX: look up anime by ID, fallback to title ----
-                      let anime = getAnimeDetails(item.anime_id);
-                      if (!anime && item.title) {
-                        anime = getAnimeByTitle(item.title);
-                      }
+                      // ---- Resolve anime for this schedule item ----
+                      const anime = getAnimeForScheduleItem(item);
+                      const targetId = anime?.id || null;
                       const isNotified = !!notifiedItems[item.id];
+
                       return (
                         <div key={item.id} className="relative group flex items-start gap-3 bg-[#0b0b10] border border-zinc-900 p-3 rounded-xl md:rounded-2xl hover:border-zinc-800/80 transition-all">
                           <div className={`absolute -left-[21px] top-5 w-2.5 h-2.5 rounded-full border-2 bg-[#040406] z-10 ${
@@ -503,7 +507,7 @@ export default function UpdatesPage({
 
                           <div
                             className="w-20 md:w-28 aspect-[16/10] rounded-lg overflow-hidden bg-zinc-900 relative shrink-0 cursor-pointer"
-                            onClick={() => openWatch(item.anime_id, item.episode)}
+                            onClick={() => targetId ? openWatch(targetId, item.episode) : alert('🎬 This anime is coming soon! Stay tuned.')}
                           >
                             <img
                               src={anime?.image || "https://images.unsplash.com/photo-1560942485-b2a11cc13456?w=400&q=80"}
@@ -519,7 +523,7 @@ export default function UpdatesPage({
 
                           <div
                             className="flex-1 min-w-0 pr-10 space-y-1 cursor-pointer"
-                            onClick={() => openWatch(item.anime_id, item.episode)}
+                            onClick={() => targetId ? openWatch(targetId, item.episode) : alert('🎬 This anime is coming soon! Stay tuned.')}
                           >
                             <h4 className="text-[11px] md:text-sm font-bold text-zinc-200 group-hover:text-amber-400 transition-colors truncate leading-tight">
                               {item.title || anime?.title || 'Unknown'}
@@ -571,16 +575,15 @@ export default function UpdatesPage({
                       <div className="text-center py-8 text-zinc-500 text-sm">No shows this week</div>
                     ) : (
                       allWeekItems.map((item) => {
-                        let anime = getAnimeDetails(item.anime_id);
-                        if (!anime && item.title) {
-                          anime = getAnimeByTitle(item.title);
-                        }
+                        const anime = getAnimeForScheduleItem(item);
+                        const targetId = anime?.id || null;
                         const isNotified = !!notifiedItems[item.id];
+
                         return (
                           <div
                             key={item.id}
                             className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-900/50 cursor-pointer group transition-all"
-                            onClick={() => openWatch(item.anime_id, item.episode)}
+                            onClick={() => targetId ? openWatch(targetId, item.episode) : alert('🎬 This anime is coming soon! Stay tuned.')}
                           >
                             <div className="w-12 h-16 rounded-lg overflow-hidden bg-zinc-900 shrink-0">
                               <img
@@ -619,7 +622,6 @@ export default function UpdatesPage({
 
         {activeView === 'latest' && (
           <div className="space-y-6">
-            {/* Featured News – unchanged, just a placeholder for brevity */}
             {showSkeleton ? (
               <div className="relative w-full rounded-2xl overflow-hidden bg-[#0c0d19] border border-zinc-900/60 min-h-[280px] md:min-h-[360px] flex items-end animate-pulse">
                 <div className="absolute inset-0 bg-zinc-800" />
