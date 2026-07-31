@@ -122,7 +122,7 @@ function formatEmbedUrl(url: string): string {
     if (match) return `https://web.nxsha.app/embed/tv/${match[1]}/${match[2]}/${match[3]}`;
   }
 
-  // ---- Vidnest (FIX: use as-is, only add autoplay=0) ----
+  // ---- Vidnest (use as-is, add autoplay=0) ----
   if (trimmed.includes('vidnest.fun')) {
     try {
       const urlObj = new URL(trimmed);
@@ -298,6 +298,7 @@ function WatchContent() {
 
   const currentServerUrl = useMemo(() => servers[selectedServer] || '', [servers, selectedServer]);
 
+  // ---- UPDATED: Added 'vaplayer.ru' to embed domains ----
   const isIframe = useMemo(() => {
     const url = currentServerUrl;
     if (!url) return false;
@@ -306,7 +307,8 @@ function WatchContent() {
       'youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com',
       'drive.google.com', 'googleapis.com', 'ok.ru', 'streamtape.com',
       'mp4upload.com', 'vidcloud', 'gdrive', 'vidnest.fun', 'nxsha.app',
-      'megaplay.buzz'
+      'megaplay.buzz',
+      'vaplayer.ru'   // Added for VidAPI
     ];
     return embedDomains.some(domain => t.includes(domain));
   }, [currentServerUrl]);
@@ -1159,20 +1161,16 @@ function WatchContent() {
   // 🆕 RESET IFRAME STATE ON SERVER CHANGE
   // ================================================================
   useEffect(() => {
-    // Only run for iframe embeds
     if (!isIframe || !currentServerUrl) return;
 
-    // Reset loading/error states when the server URL changes
     setPlayerLoading(true);
     setPlayerError('');
 
-    // Clear any existing timeout
     if (iframeLoadingTimeoutRef.current) {
       clearTimeout(iframeLoadingTimeoutRef.current);
       iframeLoadingTimeoutRef.current = null;
     }
 
-    // Fallback: hide loading after 10s if onLoad never fires
     iframeLoadingTimeoutRef.current = setTimeout(() => {
       setPlayerLoading(false);
       iframeLoadingTimeoutRef.current = null;
@@ -1187,7 +1185,7 @@ function WatchContent() {
   }, [currentServerUrl, isIframe]);
 
   // ================================================================
-  // VIDNEST SHIELD HANDLER
+  // VIDNEST SHIELD HANDLER (only for vidnest)
   // ================================================================
   const handleShieldTap = () => {
     setShieldVisible(false);
@@ -1340,9 +1338,10 @@ function WatchContent() {
             </div>
           )}
 
-          {/* Iframe embed with conditional sandbox for Vidnest + MegaPlay */}
+          {/* Iframe embed – NO sandbox for VidAPI, Vidnest, MegaPlay */}
           {isIframe && currentServerUrl && !playerError && (
             <>
+              {/* Show shield only for Vidnest (and only when shieldVisible) */}
               {isVidnest && shieldVisible && (
                 <div
                   className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-pointer touch-manipulation"
@@ -1358,7 +1357,7 @@ function WatchContent() {
               )}
 
               <iframe
-                key={currentServerUrl} // 👈 Force re‑mount on URL change
+                key={currentServerUrl} // Force re‑mount on URL change
                 ref={iframeRef}
                 src={formatEmbedUrl(currentServerUrl)}
                 className="absolute inset-0 w-full h-full"
@@ -1368,10 +1367,12 @@ function WatchContent() {
                 onLoad={() => setPlayerLoading(false)}
                 {...(() => {
                   const url = currentServerUrl.toLowerCase();
-                  const needsNoSandbox = url.includes('vidnest.fun') || url.includes('megaplay.buzz');
+                  // 🆕 Include vaplayer.ru here so VidAPI embeds are not sandboxed
+                  const needsNoSandbox = url.includes('vidnest.fun') || url.includes('megaplay.buzz') || url.includes('vaplayer.ru');
                   if (needsNoSandbox) {
                     return {
                       style: {
+                        // For Vidnest, block interactions until shield is tapped.
                         pointerEvents: (isVidnest && (shieldVisible || !iframeEnabled)) ? 'none' : 'auto',
                       },
                     };

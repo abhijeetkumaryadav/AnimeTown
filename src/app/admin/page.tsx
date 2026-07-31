@@ -105,7 +105,7 @@ export default function AdminPanel() {
   const [reportsLoading, setReportsLoading] = useState(false);
 
   // Import tabs
-  const [importTab, setImportTab] = useState<'api' | 'vidnest' | 'nxsha' | 'anikoto'>('api');
+  const [importTab, setImportTab] = useState<'api' | 'vidnest' | 'nxsha' | 'anikoto' | 'vidapi'>('api');
   const [importQuery, setImportQuery] = useState('');
   const [importResults, setImportResults] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
@@ -128,6 +128,11 @@ export default function AdminPanel() {
   const [anikotoResults, setAnikotoResults] = useState<any[]>([]);
   const [anikotoLoading, setAnikotoLoading] = useState(false);
   const [anikotoLanguage, setAnikotoLanguage] = useState('sub');
+
+  // === VIDAPI specific ===
+  const [vidapiQuery, setVidapiQuery] = useState('');
+  const [vidapiResults, setVidapiResults] = useState<any[]>([]);
+  const [vidapiLoading, setVidapiLoading] = useState(false);
 
   // Sliders
   const [slidersTab, setSlidersTab] = useState<'featured' | 'newlyAdded'>('featured');
@@ -193,7 +198,6 @@ export default function AdminPanel() {
     setLoginError('');
     setLoginLoading(true);
     try {
-      // ✅ Use Cloudflare Worker endpoint
       const res = await fetch('https://anime-cms.animetown.workers.dev/api/check-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -889,6 +893,149 @@ export default function AdminPanel() {
     setIsImporting(false);
   };
 
+  // ==================== VIDAPI IMPORT (with Season Support) ====================
+  const handleVidapiSearch = async () => {
+    if (!vidapiQuery.trim()) return;
+    setVidapiLoading(true);
+    try {
+      const res = await fetch(`/api/stream-servers/vidapi?search=${encodeURIComponent(vidapiQuery)}`);
+      const data = await res.json();
+      if (data.results) {
+        setVidapiResults(data.results);
+        showNotification(data.results.length === 0 ? 'No results' : `Found ${data.results.length} results`);
+      } else {
+        showNotification('Search failed', 'error');
+      }
+    } catch (err) {
+      showNotification('VidAPI search failed', 'error');
+    }
+    setVidapiLoading(false);
+  };
+
+  const importVidapiAnime = async (result: any) => {
+    setIsImporting(true);
+    try {
+      const animeData = {
+        title: result.title,
+        type: result.type || 'TV',
+        status: result.status || 'Ongoing',
+        episodes: result.episodes || 0,
+        score: result.score || 0,
+        year: result.year?.toString() || new Date().getFullYear().toString(),
+        genre: result.genre || '',
+        studio: result.studio || 'Unknown',
+        image: result.image || 'https://via.placeholder.com/200x300',
+        description: result.description || '',
+      };
+
+      let animeId: string | null = null;
+      const existing = animeList.find((a: any) => 
+        a.title.toLowerCase() === animeData.title.toLowerCase()
+      );
+      
+      if (existing) {
+        animeId = existing.id;
+        showNotification(`Anime "${animeData.title}" already exists, adding episodes...`);
+      } else {
+        const res = await CloudflareAPI.postAnime(animeData);
+        if (res.success && res.anime) {
+          animeId = res.anime.id;
+          setAnimeList(prev => [...prev, res.anime]);
+          showNotification(`Anime "${animeData.title}" imported!`);
+        } else {
+          throw new Error('Failed to import anime');
+        }
+      }
+
+      if (!animeId) throw new Error('No anime ID');
+
+      // Fetch existing episodes for this anime
+      const allEpisodesRes = await CloudflareAPI.getEpisodes();
+      const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
+      const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
+
+      // Build query for VidAPI episode generation
+      const params = new URLSearchParams();
+      if (result.imdb_id) params.append('imdbId', result.imdb_id);
+      if (result.tmdb_id) params.append('tmdbId', result.tmdb_id);
+      params.append('totalEpisodes', String(result.episodes || 0));
+      params.append('type', result.type || 'tv');
+      // ✅ Pass the season number (default to 1)
+      params.append('season', String(result.season || 1));
+
+      const epRes = await fetch(`/api/stream-servers/vidapi/episodes?${params.toString()}`);
+      const epData = await epRes.json();
+      const vidEpisodes = epData.episodes || [];
+
+      if (!vidEpisodes.length) {
+        showNotification('No episodes generated.', 'error');
+        setIsImporting(false);
+        return;
+      }
+
+      let added = 0;
+      const langKey = 'sub';
+      const newServerName = 'VidAPI';
+
+      for (const ep of vidEpisodes) {
+        const epNumber = ep.number;
+        const newUrl = ep.link;
+        const existingEp = existingMap.get(epNumber);
+
+        if (existingEp) {
+          // Merge into existing episode
+          const mergedLanguages = { ...(existingEp.languages || {}) };
+          const mergedServers = { ...(existingEp.servers || {}) };
+          if (!mergedLanguages[langKey] || mergedLanguages[langKey] !== newUrl) {
+            mergedLanguages[langKey] = newUrl;
+          }
+          if (!mergedServers[langKey]) {
+            mergedServers[langKey] = {};
+          }
+          mergedServers[langKey][newServerName] = newUrl;
+
+          const updateResult = await CloudflareAPI.putEpisode({
+            id: existingEp.id,
+            anime_id: animeId,
+            number: epNumber,
+            title: existingEp.title || `Episode ${epNumber}`,
+            languages: mergedLanguages,
+            servers: mergedServers,
+          });
+          if (updateResult.success) {
+            setEpisodes(prev => prev.map(e => e.id === existingEp.id ? { ...e, languages: mergedLanguages, servers: mergedServers } : e));
+            added++;
+          }
+        } else {
+          // New episode
+          const epDataObj = {
+            anime_id: animeId,
+            number: epNumber,
+            title: `Episode ${epNumber}`,
+            languages: { [langKey]: newUrl },
+            servers: { [langKey]: { [newServerName]: newUrl } },
+          };
+          try {
+            const res = await CloudflareAPI.postEpisode(epDataObj);
+            if (res.success && res.episode) {
+              setEpisodes(prev => [...prev, res.episode]);
+              added++;
+            }
+          } catch (e) {
+            console.warn('Failed to add episode', epNumber, e);
+          }
+        }
+      }
+
+      await loadAllData();
+      showNotification(`Imported ${added} episodes from VidAPI for "${result.title}"`);
+
+    } catch (err: any) {
+      showNotification('VidAPI import failed: ' + (err.message || ''), 'error');
+    }
+    setIsImporting(false);
+  };
+
   // ==================== EPISODES ====================
   const filteredAnimeForEp = episodeSearch.trim()
     ? animeList.filter(a => a.title.toLowerCase().includes(episodeSearch.toLowerCase()))
@@ -1434,6 +1581,7 @@ export default function AdminPanel() {
                 <button onClick={() => setImportTab('vidnest')} className={`px-4 py-2 rounded-xl text-xs font-bold ${importTab === 'vidnest' ? 'bg-purple-600 text-white' : 'bg-white/5 text-white/40'}`}>Vidnest</button>
                 <button onClick={() => setImportTab('nxsha')} className={`px-4 py-2 rounded-xl text-xs font-bold ${importTab === 'nxsha' ? 'bg-blue-600 text-white' : 'bg-white/5 text-white/40'}`}>Nxsha</button>
                 <button onClick={() => setImportTab('anikoto')} className={`px-4 py-2 rounded-xl text-xs font-bold ${importTab === 'anikoto' ? 'bg-green-600 text-white' : 'bg-white/5 text-white/40'}`}>Anikoto</button>
+                <button onClick={() => setImportTab('vidapi')} className={`px-4 py-2 rounded-xl text-xs font-bold ${importTab === 'vidapi' ? 'bg-indigo-600 text-white' : 'bg-white/5 text-white/40'}`}>VidAPI</button>
               </div>
 
               {importTab === 'api' && (
@@ -1693,6 +1841,72 @@ export default function AdminPanel() {
                   )}
                 </div>
               )}
+
+              {/* === VIDAPI TAB === */}
+              {importTab === 'vidapi' && (
+                <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  <div className="flex gap-3 mb-4">
+                    <input
+                      type="text"
+                      value={vidapiQuery}
+                      onChange={(e) => setVidapiQuery(e.target.value)}
+                      placeholder="Search anime for VidAPI embed..."
+                      className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-indigo-500 outline-none"
+                      onKeyDown={(e) => e.key === 'Enter' && handleVidapiSearch()}
+                    />
+                    <button
+                      onClick={handleVidapiSearch}
+                      disabled={vidapiLoading}
+                      className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2"
+                      style={{ background: 'linear-gradient(135deg, #6366f1, #4f46e5)' }}
+                    >
+                      {vidapiLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      Search VidAPI
+                    </button>
+                  </div>
+
+                  {vidapiResults.length > 0 && (
+                    <div className="mt-6 space-y-3">
+                      <h4 className="text-sm font-bold text-white">VidAPI Results ({vidapiResults.length})</h4>
+                      {vidapiResults.map((result) => (
+                        <div key={result.id} className="flex items-center gap-4 p-4 rounded-xl border border-white/5 hover:border-indigo-500/20" style={{ background: 'rgba(255,255,255,0.01)' }}>
+                          <div className="w-14 h-20 rounded-lg bg-cover bg-center shrink-0" style={{ backgroundImage: `url(${result.image})` }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-white">{result.title}</p>
+                            <p className="text-xs text-white/30">{result.type} • {result.episodes} eps • ★{result.score}</p>
+                            <p className="text-xs text-white/20 line-clamp-1">{result.genre}</p>
+                            <div className="flex gap-2 mt-1">
+                              {result.tmdb_id && (
+                                <span className="text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded">TMDB: {result.tmdb_id}</span>
+                              )}
+                              {result.imdb_id && (
+                                <span className="text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded">IMDB: {result.imdb_id}</span>
+                              )}
+                              {!result.tmdb_id && !result.imdb_id && (
+                                <span className="text-[10px] text-yellow-400/60">⚠️ No external ID found</span>
+                              )}
+                              {result.season && (
+                                <span className="text-[10px] text-white/20">Season {result.season}</span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => importVidapiAnime(result)}
+                            disabled={isImporting || (!result.imdb_id && !result.tmdb_id)}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600/80 hover:bg-indigo-600 shrink-0 disabled:opacity-50"
+                          >
+                            Import Anime + Episodes
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {vidapiResults.length === 0 && vidapiQuery && !vidapiLoading && (
+                    <p className="text-white/30 text-sm text-center mt-4">No results found. Try a different title.</p>
+                  )}
+                </div>
+              )}
+
             </div>
           )}
 
