@@ -270,7 +270,24 @@ function SectionHeader({ title, icon, onViewAll }: any) {
   );
 }
 
+// ============================================================
+// UPDATED FullListOverlay – mobile-friendly "Load More"
+// ============================================================
 function FullListOverlay({ type, title, items, onClose, onPlay, onToggleList, isInList }: any) {
+  const [visibleCount, setVisibleCount] = useState(50);
+  const batchSize = 50;
+
+  useEffect(() => {
+    setVisibleCount(Math.min(50, items.length));
+  }, [items]);
+
+  const visibleItems = items.slice(0, visibleCount);
+  const hasMore = visibleCount < items.length;
+
+  const loadMore = () => {
+    setVisibleCount(prev => Math.min(prev + batchSize, items.length));
+  };
+
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
@@ -278,16 +295,23 @@ function FullListOverlay({ type, title, items, onClose, onPlay, onToggleList, is
 
   return (
     <div className="fixed inset-0 z-50 bg-[#06070d] overflow-y-auto">
-      <div className="max-w-[1400px] mx-auto min-h-screen p-3 md:p-6">
+      <div className="max-w-[1400px] mx-auto min-h-screen p-3 md:p-6 pb-24 md:pb-12">
+        {/* Header */}
         <div className="flex items-center justify-between mb-4 sticky top-0 bg-[#06070d] z-10 py-2">
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="p-1.5 md:p-2 bg-zinc-900/60 rounded-xl text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
+            <button onClick={onClose} className="p-1.5 md:p-2 bg-zinc-900/60 rounded-xl text-zinc-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
             <h2 className="text-lg md:text-xl font-black text-white">{title}</h2>
           </div>
-          <span className="text-xs text-zinc-500">{items.length} items</span>
+          <span className="text-xs text-zinc-500">
+            {visibleCount} of {items.length} items
+          </span>
         </div>
+
+        {/* Grid */}
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 md:gap-3">
-          {items.map((item: any) => (
+          {visibleItems.map((item: any) => (
             <AnimeCard
               key={item.id}
               anime={item}
@@ -297,6 +321,22 @@ function FullListOverlay({ type, title, items, onClose, onPlay, onToggleList, is
             />
           ))}
         </div>
+
+        {/* Load More Button – mobile friendly */}
+        {hasMore && (
+          <div className="flex justify-center mt-6 px-2">
+            <button
+              onClick={loadMore}
+              className="w-full sm:w-auto px-6 py-3 sm:py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-bold text-zinc-300 transition-colors touch-manipulation"
+            >
+              Load More ({visibleCount}/{items.length})
+            </button>
+          </div>
+        )}
+
+        {!hasMore && items.length > 0 && (
+          <p className="text-center text-zinc-500 text-xs mt-6">All items loaded</p>
+        )}
       </div>
     </div>
   );
@@ -1011,7 +1051,7 @@ export default function HomePage() {
                 </div>
               </section>
 
-              {/* ✅ Recommended – now shows 8 items + View all */}
+              {/* Recommended – 8 items + View all */}
               <section className="space-y-2 px-3">
                 <div className="flex justify-between items-center">
                   <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
