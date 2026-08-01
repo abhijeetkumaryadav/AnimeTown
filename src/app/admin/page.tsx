@@ -79,28 +79,32 @@ const getLanguageKeyFromDisplay = (displayName: string) => {
 };
 
 // ============================================================
-//   TYPE NORMALIZATION
-// ============================================================
-function normalizeType(type: string): string {
-  const lower = type.toLowerCase();
-  const map: Record<string, string> = {
-    'tv': 'TV',
-    'movie': 'Movie',
-    'ova': 'OVA',
-    'special': 'Special',
-    'ona': 'ONA',
-    'music': 'Music',
-    'tv_short': 'TV Short',
-  };
-  return map[lower] || lower.charAt(0).toUpperCase() + lower.slice(1);
-}
-
-// ============================================================
 //   HELPER FOR REPORT COUNT
 // ============================================================
 const getReportCountForAnime = (animeId: string, reports: any[]) => {
   return reports.filter(r => r.animeId === animeId).length;
 };
+
+// ============================================================
+//   HELPER FOR TMDB TV SEASONS (used in VidAPI import)
+// ============================================================
+async function fetchTMDBTVSeasons(tmdbId: number) {
+  try {
+    const url = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=f53d9598f4e3d849706245ce05804a46`;
+    const resp = await fetch(url, {
+      headers: {
+        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJmNTNkOTU5OGY0ZTNkODQ5NzA2MjQ1Y2UwNTgwNGE0NiIsIm5iZiI6MTc4NTM4ODkxOS4xMDA5OTk4LCJzdWIiOiI2YTZhZGY3NzMzMzJlYmQwYWNhYzhhYjQiLCJzY29wZXMiOlsiYXBpX3JlYWQiXSwidmVyc2lvbiI6MX0.1yuCJDAVOpts5kVbhBzKBWHKWTlFIkAwxGfTFmB23GM'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.seasons || [];
+  } catch (error) {
+    console.error('TMDB seasons fetch error:', error);
+    return null;
+  }
+}
 
 export default function AdminPanel() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -170,15 +174,6 @@ export default function AdminPanel() {
 
   const [addServerForm, setAddServerForm] = useState<{ episodeId: string | null, language: string, serverName: string, link: string }>({
     episodeId: null,
-    language: 'jap',
-    serverName: '',
-    link: ''
-  });
-
-  // Modal state for Add Server
-  const [showAddServerModal, setShowAddServerModal] = useState(false);
-  const [addServerData, setAddServerData] = useState<{ episodeId: string; language: string; serverName: string; link: string }>({
-    episodeId: '',
     language: 'jap',
     serverName: '',
     link: ''
@@ -491,12 +486,9 @@ export default function AdminPanel() {
   const importVidnestAnime = async (vnResult: any) => {
     setIsImporting(true);
     try {
-      const normalizedTitle = vnResult.title.trim().toLowerCase();
-      const normalizedType = (vnResult.type || 'tv').toLowerCase();
-
       const animeData = {
         title: vnResult.title,
-        type: normalizeType(normalizedType),
+        type: vnResult.type || 'TV',
         status: vnResult.status || 'Ongoing',
         episodes: vnResult.episodes || 0,
         score: vnResult.score || 0,
@@ -508,12 +500,10 @@ export default function AdminPanel() {
       };
 
       let animeId: string | null = null;
-      const existing = animeList.find((a: any) => {
-        const existingTitle = a.title?.trim().toLowerCase() || '';
-        const existingType = (a.type || 'tv').toLowerCase();
-        return existingTitle === normalizedTitle && existingType === normalizedType;
-      });
-
+      const existing = animeList.find((a: any) => 
+        a.title.toLowerCase() === animeData.title.toLowerCase()
+      );
+      
       if (existing) {
         animeId = existing.id;
         showNotification(`Anime "${animeData.title}" already exists, adding episodes...`);
@@ -530,13 +520,14 @@ export default function AdminPanel() {
 
       if (!animeId) throw new Error('No anime ID');
 
-      // Fetch existing episodes
+      // --- Fetch existing episodes for this anime ---
       const allEpisodesRes = await CloudflareAPI.getEpisodes();
       const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
       const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
 
       const language = 'sub';
       const embedType = selectedVidnestType || 'anime';
+      
       const epRes = await fetch(`/api/stream-servers/vidnest/episodes?anilistId=${vnResult.anilistId}&totalEpisodes=${vnResult.episodes || 0}&type=${embedType}&language=${language}`);
       const epData = await epRes.json();
       const vidEpisodes = epData.episodes || [];
@@ -557,8 +548,10 @@ export default function AdminPanel() {
         const existingEp = existingMap.get(epNumber);
 
         if (existingEp) {
+          // ---- MERGE into existing episode ----
           const mergedLanguages = { ...(existingEp.languages || {}) };
           const mergedServers = { ...(existingEp.servers || {}) };
+
           if (!mergedLanguages[langKey] || mergedLanguages[langKey] !== newUrl) {
             mergedLanguages[langKey] = newUrl;
           }
@@ -580,6 +573,7 @@ export default function AdminPanel() {
             added++;
           }
         } else {
+          // ---- NEW episode ----
           const epDataObj = {
             anime_id: animeId,
             number: epNumber,
@@ -601,6 +595,7 @@ export default function AdminPanel() {
 
       await loadAllData();
       showNotification(`Imported ${added} episodes from Vidnest for "${vnResult.title}"`);
+
     } catch (err) {
       showNotification('Vidnest import failed: ' + (err as Error).message, 'error');
     }
@@ -611,7 +606,9 @@ export default function AdminPanel() {
   const handleNxshaAction = async () => {
     const query = nxshaQuery.trim();
     if (!query) return;
-    if (/^\d+$/.test(query)) {
+
+    const isNumeric = /^\d+$/.test(query);
+    if (isNumeric) {
       await handleNxshaSearch(query);
     } else {
       await handleNxshaSearch(query);
@@ -640,12 +637,9 @@ export default function AdminPanel() {
   const importNxshaAnime = async (result: any, language: string = 'hin') => {
     setIsImporting(true);
     try {
-      const normalizedTitle = result.title.trim().toLowerCase();
-      const normalizedType = (result.type || 'tv').toLowerCase();
-
       const animeData = {
         title: result.title,
-        type: normalizeType(normalizedType),
+        type: result.type || 'TV',
         status: result.status || 'Ongoing',
         episodes: result.episodes || 0,
         score: result.score || 0,
@@ -657,12 +651,10 @@ export default function AdminPanel() {
       };
 
       let animeId: string | null = null;
-      const existing = animeList.find((a: any) => {
-        const existingTitle = a.title?.trim().toLowerCase() || '';
-        const existingType = (a.type || 'tv').toLowerCase();
-        return existingTitle === normalizedTitle && existingType === normalizedType;
-      });
-
+      const existing = animeList.find((a: any) => 
+        a.title.toLowerCase() === animeData.title.toLowerCase()
+      );
+      
       if (existing) {
         animeId = existing.id;
         showNotification(`Anime "${animeData.title}" already exists, adding episodes...`);
@@ -679,7 +671,7 @@ export default function AdminPanel() {
 
       if (!animeId) throw new Error('No anime ID');
 
-      // Fetch existing episodes
+      // Fetch existing episodes for this anime
       const allEpisodesRes = await CloudflareAPI.getEpisodes();
       const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
       const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
@@ -755,6 +747,7 @@ export default function AdminPanel() {
 
       await loadAllData();
       showNotification(`Imported ${added} episodes from Nxsha for "${result.title}"`);
+
     } catch (err) {
       showNotification('Nxsha import failed: ' + (err as Error).message, 'error');
     }
@@ -783,12 +776,9 @@ export default function AdminPanel() {
   const importAnikotoAnime = async (result: any) => {
     setIsImporting(true);
     try {
-      const normalizedTitle = result.title.trim().toLowerCase();
-      const normalizedType = (result.type || 'tv').toLowerCase();
-
       const animeData = {
         title: result.title,
-        type: normalizeType(normalizedType),
+        type: result.type || 'TV',
         status: result.status || 'Ongoing',
         episodes: result.episodes || 0,
         score: result.score || 0,
@@ -800,12 +790,10 @@ export default function AdminPanel() {
       };
 
       let animeId: string | null = null;
-      const existing = animeList.find((a: any) => {
-        const existingTitle = a.title?.trim().toLowerCase() || '';
-        const existingType = (a.type || 'tv').toLowerCase();
-        return existingTitle === normalizedTitle && existingType === normalizedType;
-      });
-
+      const existing = animeList.find((a: any) => 
+        a.title.toLowerCase() === animeData.title.toLowerCase()
+      );
+      
       if (existing) {
         animeId = existing.id;
         showNotification(`Anime "${animeData.title}" already exists, adding episodes...`);
@@ -822,16 +810,17 @@ export default function AdminPanel() {
 
       if (!animeId) throw new Error('No anime ID');
 
-      // Fetch existing episodes
+      // --- Fetch existing episodes for this anime ---
       const allEpisodesRes = await CloudflareAPI.getEpisodes();
       const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
       const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
 
       const language = anikotoLanguage; // 'sub' or 'dub'
+      
       let url = `/api/stream-servers/anikoto/episodes?anikotoId=${result.anikotoId || ''}&language=${language}`;
       if (result.mal_id) url += `&malId=${result.mal_id}`;
       if (result.episodes) url += `&totalEpisodes=${result.episodes}`;
-
+      
       const epRes = await fetch(url);
       const epData = await epRes.json();
       const episodes = epData.episodes || [];
@@ -896,13 +885,14 @@ export default function AdminPanel() {
 
       await loadAllData();
       showNotification(`Imported ${added} episodes from Anikoto/MegaPlay for "${result.title}"`);
+
     } catch (err) {
       showNotification('Anikoto import failed: ' + (err as Error).message, 'error');
     }
     setIsImporting(false);
   };
 
-  // ==================== VIDAPI IMPORT (with Season Support) ====================
+  // ==================== VIDAPI IMPORT (All Seasons + Metadata) ====================
   const handleVidapiSearch = async () => {
     if (!vidapiQuery.trim()) return;
     setVidapiLoading(true);
@@ -924,107 +914,156 @@ export default function AdminPanel() {
   const importVidapiAnime = async (result: any) => {
     setIsImporting(true);
     try {
-      const normalizedTitle = result.title.trim().toLowerCase();
-      const normalizedType = (result.type || 'tv').toLowerCase();
-
+      // 1. Build the anime data object with explicit fallbacks
       const animeData = {
-        title: result.title,
-        type: normalizeType(normalizedType),
+        title: result.title || 'Unknown Title',
+        type: result.type || 'TV',
         status: result.status || 'Ongoing',
-        episodes: result.episodes || 0,
+        episodes: 0, // we'll update later
         score: result.score || 0,
         year: result.year?.toString() || new Date().getFullYear().toString(),
         genre: result.genre || '',
         studio: result.studio || 'Unknown',
         image: result.image || 'https://via.placeholder.com/200x300',
-        description: result.description || '',
+        description: result.description || 'No description available.',
+        tmdb_id: result.tmdb_id || null,
+        imdb_id: result.imdb_id || null,
       };
 
-      let animeId: string | null = null;
-      const existing = animeList.find((a: any) => {
-        const existingTitle = a.title?.trim().toLowerCase() || '';
-        const existingType = (a.type || 'tv').toLowerCase();
-        return existingTitle === normalizedTitle && existingType === normalizedType;
-      });
+      // Log the data to see if it's correct
+      console.log('📦 Importing anime with data:', animeData);
 
+      let animeId: string | null = null;
+      const existing = animeList.find((a: any) => 
+        a.title?.toLowerCase() === animeData.title?.toLowerCase()
+      );
+      
       if (existing) {
         animeId = existing.id;
-        showNotification(`Anime "${animeData.title}" already exists, adding episodes...`);
+        showNotification(`Anime "${animeData.title}" already exists, updating metadata...`);
+        // 🔥 Force update with all fields
+        const updateResult = await CloudflareAPI.putAnime({ id: animeId, ...animeData });
+        console.log('🔄 Update result:', updateResult);
+        if (!updateResult.success) {
+          console.warn('Failed to update anime metadata:', updateResult);
+        }
       } else {
         const res = await CloudflareAPI.postAnime(animeData);
+        console.log('➕ Create result:', res);
         if (res.success && res.anime) {
           animeId = res.anime.id;
           setAnimeList(prev => [...prev, res.anime]);
           showNotification(`Anime "${animeData.title}" imported!`);
         } else {
-          throw new Error('Failed to import anime');
+          throw new Error('Failed to import anime: ' + (res.error || 'Unknown error'));
         }
       }
 
       if (!animeId) throw new Error('No anime ID');
 
-      // Fetch existing episodes
+      // 2. Fetch existing episodes for this anime (to merge)
       const allEpisodesRes = await CloudflareAPI.getEpisodes();
       const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
-      const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
+      const existingMap = new Map<string, any>(); // key: "season-episode"
+      existingEpisodes.forEach((ep: any) => {
+        const key = `${ep.season || 1}-${ep.number}`;
+        existingMap.set(key, ep);
+      });
 
-      // Build query for VidAPI episode generation
-      const params = new URLSearchParams();
-      if (result.imdb_id) params.append('imdbId', result.imdb_id);
-      if (result.tmdb_id) params.append('tmdbId', result.tmdb_id);
-      params.append('totalEpisodes', String(result.episodes || 0));
-      params.append('type', normalizedType); // API expects lowercase
-      params.append('season', String(result.season || 1));
+      // 3. Determine episodes to import
+      let episodesToImport: { season: number; number: number; link: string }[] = [];
 
-      const epRes = await fetch(`/api/stream-servers/vidapi/episodes?${params.toString()}`);
-      const epData = await epRes.json();
-      const vidEpisodes = epData.episodes || [];
+      // If it's a movie, just one episode
+      if (result.type?.toLowerCase() === 'movie') {
+        const link = result.imdb_id 
+          ? `https://vaplayer.ru/embed/movie/${result.imdb_id}`
+          : `https://vaplayer.ru/embed/movie/${result.tmdb_id}`;
+        episodesToImport.push({ season: 1, number: 1, link });
+      } else {
+        // TV show: fetch all seasons from TMDB
+        const seasons = await fetchTMDBTVSeasons(parseInt(result.tmdb_id));
+        if (seasons && Array.isArray(seasons) && seasons.length > 0) {
+          const filteredSeasons = seasons.filter((s: any) => s.season_number > 0 && s.episode_count > 0);
+          for (const season of filteredSeasons) {
+            const seasonNum = season.season_number;
+            const epCount = season.episode_count;
+            for (let ep = 1; ep <= epCount; ep++) {
+              const link = result.imdb_id
+                ? `https://vaplayer.ru/embed/tv/${result.imdb_id}/${seasonNum}/${ep}`
+                : `https://vaplayer.ru/embed/tv/${result.tmdb_id}/${seasonNum}/${ep}`;
+              episodesToImport.push({ season: seasonNum, number: ep, link });
+            }
+          }
+          if (episodesToImport.length === 0) {
+            const totalEp = result.episodes || 12;
+            for (let ep = 1; ep <= totalEp; ep++) {
+              const link = result.imdb_id
+                ? `https://vaplayer.ru/embed/tv/${result.imdb_id}/1/${ep}`
+                : `https://vaplayer.ru/embed/tv/${result.tmdb_id}/1/${ep}`;
+              episodesToImport.push({ season: 1, number: ep, link });
+            }
+          }
+        } else {
+          const totalEp = result.episodes || 12;
+          for (let ep = 1; ep <= totalEp; ep++) {
+            const link = result.imdb_id
+              ? `https://vaplayer.ru/embed/tv/${result.imdb_id}/1/${ep}`
+              : `https://vaplayer.ru/embed/tv/${result.tmdb_id}/1/${ep}`;
+            episodesToImport.push({ season: 1, number: ep, link });
+          }
+        }
+      }
 
-      if (!vidEpisodes.length) {
+      if (episodesToImport.length === 0) {
         showNotification('No episodes generated.', 'error');
         setIsImporting(false);
         return;
       }
 
+      // 4. Merge or create episodes
       let added = 0;
       const langKey = 'jap';
       const newServerName = 'VidAPI';
+      let globalEpNumber = 1;
 
-      for (const ep of vidEpisodes) {
-        const epNumber = ep.number;
-        const newUrl = ep.link;
-        const existingEp = existingMap.get(epNumber);
+      for (const ep of episodesToImport) {
+        const epKey = `${ep.season}-${ep.number}`;
+        const existingEp = existingMap.get(epKey);
 
         if (existingEp) {
           const mergedLanguages = { ...(existingEp.languages || {}) };
           const mergedServers = { ...(existingEp.servers || {}) };
-          if (!mergedLanguages[langKey] || mergedLanguages[langKey] !== newUrl) {
-            mergedLanguages[langKey] = newUrl;
+          if (!mergedLanguages[langKey] || mergedLanguages[langKey] !== ep.link) {
+            mergedLanguages[langKey] = ep.link;
           }
           if (!mergedServers[langKey]) {
             mergedServers[langKey] = {};
           }
-          mergedServers[langKey][newServerName] = newUrl;
+          mergedServers[langKey][newServerName] = ep.link;
 
           const updateResult = await CloudflareAPI.putEpisode({
             id: existingEp.id,
             anime_id: animeId,
-            number: epNumber,
-            title: existingEp.title || `Episode ${epNumber}`,
+            number: existingEp.number,
+            title: existingEp.title || `Episode ${existingEp.number}`,
             languages: mergedLanguages,
             servers: mergedServers,
+            season: existingEp.season || ep.season,
           });
           if (updateResult.success) {
             setEpisodes(prev => prev.map(e => e.id === existingEp.id ? { ...e, languages: mergedLanguages, servers: mergedServers } : e));
             added++;
           }
         } else {
+          const epNumberForDisplay = globalEpNumber;
+          const epTitle = `Season ${ep.season} Episode ${ep.number}`;
           const epDataObj = {
             anime_id: animeId,
-            number: epNumber,
-            title: `Episode ${epNumber}`,
-            languages: { [langKey]: newUrl },
-            servers: { [langKey]: { [newServerName]: newUrl } },
+            number: epNumberForDisplay,
+            title: epTitle,
+            languages: { [langKey]: ep.link },
+            servers: { [langKey]: { [newServerName]: ep.link } },
+            season: ep.season,
           };
           try {
             const res = await CloudflareAPI.postEpisode(epDataObj);
@@ -1033,14 +1072,38 @@ export default function AdminPanel() {
               added++;
             }
           } catch (e) {
-            console.warn('Failed to add episode', epNumber, e);
+            console.warn('Failed to add episode', epKey, e);
           }
+          globalEpNumber++;
         }
       }
 
+      // 5. Final update: set total episodes and force metadata again
+      const totalEpisodesCount = episodesToImport.length;
+      const finalUpdate = {
+        id: animeId,
+        episodes: totalEpisodesCount,
+        title: animeData.title,
+        image: animeData.image,
+        description: animeData.description,
+        genre: animeData.genre,
+        studio: animeData.studio,
+        score: animeData.score,
+        year: animeData.year,
+        type: animeData.type,
+        status: animeData.status,
+        tmdb_id: animeData.tmdb_id,
+        imdb_id: animeData.imdb_id,
+      };
+      console.log('📤 Final update to anime:', finalUpdate);
+      await CloudflareAPI.putAnime(finalUpdate);
+      setAnimeList(prev => prev.map((a: any) => a.id === animeId ? { ...a, ...animeData, episodes: totalEpisodesCount } : a));
+
       await loadAllData();
-      showNotification(`Imported ${added} episodes from VidAPI for "${result.title}"`);
+      showNotification(`Imported ${added} episodes from VidAPI for "${result.title}" (Total: ${totalEpisodesCount} episodes)`);
+
     } catch (err: any) {
+      console.error('❌ VidAPI import error:', err);
       showNotification('VidAPI import failed: ' + (err.message || ''), 'error');
     }
     setIsImporting(false);
@@ -1143,7 +1206,6 @@ export default function AdminPanel() {
     }
   };
 
-  // ---------- Add Server to Episode (used by modal) ----------
   const addServerToEpisode = async () => {
     const { episodeId, language, serverName, link } = addServerForm;
     if (!episodeId || !language || !serverName || !link) {
@@ -1173,7 +1235,6 @@ export default function AdminPanel() {
         setEpisodes(prev => prev.map(e => e.id === episodeId ? { ...e, languages: updatedLanguages, servers: updatedServers } : e));
         showNotification(`Server "${serverName}" added to episode ${ep.number}!`);
         setAddServerForm({ episodeId: null, language: 'jap', serverName: '', link: '' });
-        setShowAddServerModal(false);
       } else {
         showNotification('Failed to add server.', 'error');
       }
@@ -1215,64 +1276,6 @@ export default function AdminPanel() {
       }
     } catch (err) {
       showNotification('Failed to update server.', 'error');
-    }
-  };
-
-  // ---------- Remove Server from Episode ----------
-  const removeServerFromEpisode = async (episodeId: string, language: string, serverName: string) => {
-    if (!confirm(`Remove server "${serverName}" for language "${language}"?`)) return;
-
-    try {
-      const ep = episodes.find(e => e.id === episodeId);
-      if (!ep) {
-        showNotification('Episode not found.', 'error');
-        return;
-      }
-
-      const updatedServers = { ...(ep.servers || {}) };
-      const updatedLanguages = { ...(ep.languages || {}) };
-
-      if (updatedServers[language]) {
-        delete updatedServers[language][serverName];
-        if (Object.keys(updatedServers[language]).length === 0) {
-          delete updatedServers[language];
-          if (updatedLanguages[language]) {
-            delete updatedLanguages[language];
-          }
-        } else {
-          const firstServer = Object.keys(updatedServers[language])[0];
-          updatedLanguages[language] = updatedServers[language][firstServer];
-        }
-      } else {
-        showNotification('Server not found.', 'error');
-        return;
-      }
-
-      const result = await CloudflareAPI.putEpisode({
-        id: episodeId,
-        anime_id: ep.anime_id,
-        number: ep.number,
-        title: ep.title,
-        languages: updatedLanguages,
-        servers: updatedServers,
-      });
-
-      if (result.success) {
-        setEpisodes(prev => prev.map(e =>
-          e.id === episodeId ? { ...e, languages: updatedLanguages, servers: updatedServers } : e
-        ));
-        if (serverManagementModal && serverManagementModal.episode.id === episodeId) {
-          const updatedEp = episodes.find(e => e.id === episodeId);
-          if (updatedEp) {
-            setServerManagementModal({ episode: updatedEp, animeTitle: serverManagementModal.animeTitle });
-          }
-        }
-        showNotification(`Server "${serverName}" removed.`);
-      } else {
-        showNotification('Failed to remove server.', 'error');
-      }
-    } catch (err) {
-      showNotification('Network error.', 'error');
     }
   };
 
@@ -1755,7 +1758,6 @@ export default function AdminPanel() {
                 </div>
               )}
 
-              {/* ===== UPDATED NXSHA TAB ===== */}
               {importTab === 'nxsha' && (
                 <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
                   <div className="flex gap-3 mb-4">
@@ -2103,12 +2105,8 @@ export default function AdminPanel() {
                             </div>
                           );
                         })}
-                        {/* Add Server Button - Opens Modal */}
                         <button
-                          onClick={() => {
-                            setAddServerData({ episodeId: ep.id, language: 'jap', serverName: 'Server 2', link: '' });
-                            setShowAddServerModal(true);
-                          }}
+                          onClick={() => setAddServerForm({ episodeId: ep.id, language: 'jap', serverName: 'Server 2', link: '' })}
                           className="text-[10px] text-blue-400 hover:underline"
                         >
                           + Add Server
@@ -2116,7 +2114,24 @@ export default function AdminPanel() {
                       </div>
                     </div>
                   ))}
-                  {/* Removed inline form – using modal now */}
+                  {addServerForm.episodeId && (
+                    <div className="p-4 bg-white/5 border-t border-white/5">
+                      <h4 className="text-xs font-bold text-white mb-2">Add Server to Episode #{episodes.find(e => e.id === addServerForm.episodeId)?.number}</h4>
+                      <div className="grid grid-cols-4 gap-2">
+                        <select value={addServerForm.language} onChange={(e) => setAddServerForm({...addServerForm, language: e.target.value})} className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white">
+                          {Object.keys(LANGUAGE_DISPLAY_NAMES).map(lang => (
+                            <option key={lang} value={lang}>{lang}</option>
+                          ))}
+                        </select>
+                        <input type="text" value={addServerForm.serverName} onChange={(e) => setAddServerForm({...addServerForm, serverName: e.target.value})} placeholder="Server name" className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white" />
+                        <input type="text" value={addServerForm.link} onChange={(e) => setAddServerForm({...addServerForm, link: e.target.value})} placeholder="Link" className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white col-span-2" />
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={addServerToEpisode} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white">Add Server</button>
+                        <button onClick={() => setAddServerForm({ episodeId: null, language: 'jap', serverName: '', link: '' })} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white/50">Cancel</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2395,128 +2410,6 @@ export default function AdminPanel() {
         </main>
       </div>
 
-      {/* ==================== ADD SERVER MODAL ==================== */}
-      {showAddServerModal && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setShowAddServerModal(false)}>
-          <div className="bg-[#1a1a2e] rounded-2xl border border-white/10 p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-black text-white">Add Server</h3>
-              <button onClick={() => setShowAddServerModal(false)} className="p-1 text-white/40 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <p className="text-xs text-white/40 mb-4">Episode #{episodes.find(e => e.id === addServerData.episodeId)?.number}</p>
-            
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-white/50">Language</label>
-                <select
-                  value={addServerData.language}
-                  onChange={(e) => setAddServerData({...addServerData, language: e.target.value})}
-                  className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1"
-                >
-                  {Object.keys(LANGUAGE_DISPLAY_NAMES).map(lang => (
-                    <option key={lang} value={lang}>{lang} ({LANGUAGE_DISPLAY_NAMES[lang]})</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-white/50">Server Name</label>
-                <input
-                  type="text"
-                  value={addServerData.serverName}
-                  onChange={(e) => setAddServerData({...addServerData, serverName: e.target.value})}
-                  placeholder="e.g., VidAPI, Nxsha"
-                  className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-white/50">Link</label>
-                <input
-                  type="text"
-                  value={addServerData.link}
-                  onChange={(e) => setAddServerData({...addServerData, link: e.target.value})}
-                  placeholder="Video URL..."
-                  className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white mt-1"
-                />
-              </div>
-              <div className="flex gap-2 mt-4">
-                <button
-                  onClick={() => {
-                    setAddServerForm({ episodeId: addServerData.episodeId, language: addServerData.language, serverName: addServerData.serverName, link: addServerData.link });
-                    addServerToEpisode();
-                  }}
-                  className="flex-1 py-2.5 rounded-xl text-white font-bold bg-green-600 hover:bg-green-700"
-                >
-                  Add Server
-                </button>
-                <button
-                  onClick={() => setShowAddServerModal(false)}
-                  className="px-4 py-2.5 rounded-xl text-white/50 bg-white/5"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== SERVER MANAGEMENT MODAL ==================== */}
-      {serverManagementModal && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setServerManagementModal(null)}>
-          <div className="bg-[#1a1a2e] rounded-2xl border border-white/10 p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-black text-white">Manage Servers</h3>
-              <button onClick={() => setServerManagementModal(null)} className="p-1 text-white/40 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <p className="text-xs text-white/40 mb-4">Episode #{serverManagementModal.episode.number} – {serverManagementModal.animeTitle}</p>
-            
-            {Object.entries(serverManagementModal.episode.servers || {}).map(([lang, serversObj]) => {
-              const serversRecord = serversObj as Record<string, string>;
-              return (
-                <div key={lang} className="mb-4 p-3 rounded-xl border border-white/5 bg-white/5">
-                  <h4 className="text-sm font-bold text-white mb-2">{getLanguageDisplay(lang)}</h4>
-                  {Object.entries(serversRecord).map(([serverName, url]) => (
-                    <div key={serverName} className="flex items-center gap-2 mb-2">
-                      <span className="text-xs text-white/40 w-24 flex-shrink-0">{serverName}</span>
-                      <input
-                        type="text"
-                        value={url}
-                        onChange={(e) => {
-                          const updatedEp = { ...serverManagementModal.episode };
-                          updatedEp.servers[lang][serverName] = e.target.value;
-                          setServerManagementModal({ ...serverManagementModal, episode: updatedEp });
-                        }}
-                        className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500"
-                      />
-                      <button
-                        onClick={() => {
-                          const newLink = serverManagementModal.episode.servers[lang][serverName];
-                          editServerLink(serverManagementModal.episode.id, lang, serverName, newLink);
-                        }}
-                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 flex-shrink-0"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => removeServerFromEpisode(serverManagementModal.episode.id, lang, serverName)}
-                        className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/20 transition-colors flex-shrink-0"
-                        title="Remove this server"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-            
-            <div className="text-xs text-white/30 mt-4 text-center">
-              Tip: You can also use the "Add Server" button below the episode to add a new server.
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* EDIT ANIME MODAL */}
       {editAnimeModal && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setEditAnimeModal(null)}>
@@ -2559,6 +2452,56 @@ export default function AdminPanel() {
             <div className="flex gap-2">
               <button onClick={() => fixReportedLink(quickEditEp.animeId, quickEditEp.epNumber, quickEditUrl)} className="px-4 py-2 rounded-xl text-white font-bold text-sm bg-purple-600">Save Link</button>
               <button onClick={() => setQuickEditEp(null)} className="px-4 py-2 rounded-xl text-white/50 text-sm bg-white/5">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SERVER MANAGEMENT MODAL */}
+      {serverManagementModal && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setServerManagementModal(null)}>
+          <div className="bg-[#1a1a2e] rounded-2xl border border-white/10 p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-black text-white">Manage Servers</h3>
+              <button onClick={() => setServerManagementModal(null)} className="p-1 text-white/40 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs text-white/40 mb-4">Episode #{serverManagementModal.episode.number} – {serverManagementModal.animeTitle}</p>
+            
+            {Object.entries(serverManagementModal.episode.servers || {}).map(([lang, serversObj]) => {
+              const serversRecord = serversObj as Record<string, string>;
+              return (
+                <div key={lang} className="mb-4 p-3 rounded-xl border border-white/5 bg-white/5">
+                  <h4 className="text-sm font-bold text-white mb-2">{getLanguageDisplay(lang)}</h4>
+                  {Object.entries(serversRecord).map(([serverName, url]) => (
+                    <div key={serverName} className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-white/40 w-24 flex-shrink-0">{serverName}</span>
+                      <input
+                        type="text"
+                        value={url}
+                        onChange={(e) => {
+                          const updatedEp = { ...serverManagementModal.episode };
+                          updatedEp.servers[lang][serverName] = e.target.value;
+                          setServerManagementModal({ ...serverManagementModal, episode: updatedEp });
+                        }}
+                        className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500"
+                      />
+                      <button
+                        onClick={() => {
+                          const newLink = serverManagementModal.episode.servers[lang][serverName];
+                          editServerLink(serverManagementModal.episode.id, lang, serverName, newLink);
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 flex-shrink-0"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+            
+            <div className="text-xs text-white/30 mt-4 text-center">
+              Tip: You can also use the "Add Server" button below the episode to add a new server.
             </div>
           </div>
         </div>
