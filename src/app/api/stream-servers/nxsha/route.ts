@@ -1,24 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
-// ---------- Title cleaning ----------
+// ---------- Title cleaning (removes dates, ratings, "NR", etc.) ----------
 function cleanTitle(title: string): string {
   if (!title) return 'Unknown';
-  let cleaned = title.replace(/^\d+\.\d+\s*/, '');
-  cleaned = cleaned.replace(/^NR\s*/, '');
-  cleaned = cleaned.replace(/\(Coming\s+soon\)/i, '').replace(/Coming\s+soon/i, '');
-  cleaned = cleaned.replace(/\s*,\s*\d{4}$/, '');
-  cleaned = cleaned.replace(/^\d+\s*/, '');
-  cleaned = cleaned.trim();
+
+  let cleaned = title
+    // Remove leading rating like "7.1"
+    .replace(/^\d+\.\d+\s*/, '')
+    // Remove leading "NR"
+    .replace(/^NR\s*/, '')
+    // Remove "Coming soon"
+    .replace(/\(Coming\s+soon\)/i, '').replace(/Coming\s+soon/i, '')
+    // Remove trailing date patterns like "Jan 6", "Apr 15, 2017"
+    .replace(/\s*[A-Z][a-z]{2}\s+\d{1,2}(,\s*\d{4})?$/, '')
+    // Remove trailing year like ", 2017" (if date pattern missed it)
+    .replace(/\s*,\s*\d{4}$/, '')
+    // Remove leading numbers (if any remain)
+    .replace(/^\d+\s*/, '')
+    .trim();
+
   return cleaned || 'Unknown';
 }
 
+// ---------- Generate a fallback placeholder image ----------
 function getPlaceholderImage(title: string): string {
   const firstLetter = (title || 'A').charAt(0).toUpperCase();
   return `https://placehold.co/200x300/0D8ABC/FFFFFF?text=${encodeURIComponent(firstLetter)}`;
 }
 
-// ---------- Robust Nxsha scraping ----------
+// ---------- Scrape Nxsha (with retries and realistic headers) ----------
 async function scrapeNxsha(query: string, retries = 2): Promise<any[] | null> {
   const url = `https://web.nxsha.app/search?q=${encodeURIComponent(query)}`;
 
@@ -164,22 +175,22 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Return the scraped data directly (no TMDB calls)
+  // Build the final result list (no TMDB calls)
   const results = scrapedResults.map((item) => ({
     id: `nx-${item.tmdbId}`,
     tmdbId: item.tmdbId,
     type: item.type,
     title: item.title,
     image: item.image,
-    description: 'No description available.', // We don't have this from Nxsha
-    episodes: item.type === 'TV' ? 12 : 1, // Default, but the episode route will handle it
+    description: 'No description available.',
+    episodes: item.type === 'TV' ? 12 : 1, // will be overwritten by actual episode count during import
     score: 0,
     genre: '',
     studio: 'Unknown',
     status: item.type === 'TV' ? 'Ongoing' : 'Released',
     year: new Date().getFullYear().toString(),
     source: 'nxsha',
-    season: 1,
+    season: 1, // Default; user can change in the admin UI before import
     imdb_id: null,
   }));
 

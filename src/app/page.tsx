@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
+import {
   Play, Plus, Flame, ChevronLeft, ChevronRight, Bookmark, X,
   ArrowLeft, Loader2
 } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import { supabase } from '@/lib/supabaseClient';
-import { CloudflareAPI } from '@/lib/db-client';  // ✅ Import Cloudflare client
+import { CloudflareAPI } from '@/lib/db-client';
 
 // ============================================================
 // TYPES
@@ -105,6 +105,21 @@ function saveUserCache(userId: string, watchHistory: any[], watchlistIds: string
 }
 
 // ============================================================
+// TYPE NORMALIZATION
+// ============================================================
+function normalizeType(type: string | undefined | null): string {
+  if (!type) return '';
+  const upper = type.toUpperCase().trim();
+  if (['TV', 'TV_SHOW', 'TV_SERIES'].includes(upper)) return 'TV';
+  if (['MOVIE', 'FILM'].includes(upper)) return 'Movie';
+  if (['OVA', 'OAV'].includes(upper)) return 'OVA';
+  if (['ONA'].includes(upper)) return 'ONA';
+  if (['SPECIAL', 'SP'].includes(upper)) return 'Special';
+  if (['TV_SHORT', 'TV_SHORT'].includes(upper)) return 'TV Short';
+  return upper.charAt(0) + upper.slice(1).toLowerCase();
+}
+
+// ============================================================
 // FALLBACK IMAGE
 // ============================================================
 const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1560942485-b2a11cc13456?w=400&q=80";
@@ -115,18 +130,13 @@ function getSafeImage(url: string | undefined | null): string {
 }
 
 // ============================================================
-// COMPONENTS (with mobile improvements)
+// COMPONENTS
 // ============================================================
-
-/**
- * HERO SECTION – mobile‑optimised height
- */
 function HeroSection({ anime, onPrev, onNext, onWatch, onToggleList, isInList }: any) {
   return (
     <section className="relative w-full h-[300px] md:h-[440px] overflow-hidden bg-[#0c0d19] shadow-2xl flex items-center">
       <div className="absolute inset-0 bg-gradient-to-t from-[#06070d] via-transparent to-black/20 z-10" />
       <div className="absolute inset-y-0 left-0 w-full md:w-3/5 bg-gradient-to-r from-[#070913] via-[#070913]/95 to-transparent z-10" />
-      
       <div className="absolute right-0 top-0 bottom-0 w-full md:w-1/2 opacity-40 md:opacity-100 z-0">
         <img
           src={getSafeImage(anime?.image)}
@@ -134,7 +144,6 @@ function HeroSection({ anime, onPrev, onNext, onWatch, onToggleList, isInList }:
           className="w-full h-full object-cover object-right transition-all duration-700"
         />
       </div>
-
       <div className="absolute right-6 top-6 z-20 hidden md:flex items-center gap-1.5">
         <button onClick={onPrev} className="w-7 h-7 bg-black/40 border border-zinc-800 rounded flex items-center justify-center text-zinc-400 hover:text-amber-400 transition-all">
           <ChevronLeft className="w-4 h-4" />
@@ -143,7 +152,6 @@ function HeroSection({ anime, onPrev, onNext, onWatch, onToggleList, isInList }:
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
-
       <div className="relative pl-5 md:pl-16 pr-5 max-w-xl z-20 space-y-3 w-full">
         <span className="inline-block bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider shadow-[0_0_10px_rgba(245,158,11,0.2)]">
           #1 Spotlight
@@ -203,9 +211,6 @@ function GenreFilter({ genres, activeGenre, onSelect, showAll, onToggleShowAll }
   );
 }
 
-// ============================================================
-// CHANGED: AnimeCard – removed "TOP" tag, only keep rank if provided
-// ============================================================
 function AnimeCard({ anime, onPlay, onToggleList, isInList, rank }: any) {
   return (
     <div className="group space-y-1 flex-shrink-0 w-[110px] md:w-[150px]">
@@ -234,9 +239,6 @@ function AnimeCard({ anime, onPlay, onToggleList, isInList, rank }: any) {
   );
 }
 
-// ============================================================
-// CHANGED: EpisodeCard – removed "NEW" tag entirely
-// ============================================================
 function EpisodeCard({ episode, anime, onPlay }: any) {
   return (
     <div className="group space-y-1 flex-shrink-0 w-[110px] md:w-[150px]">
@@ -338,7 +340,6 @@ export default function HomePage() {
       setNewlyAddedIds(cachedHome.newlyAddedIds || []);
       setLoading(false);
     }
-
     if (user) {
       const cachedUser = getCachedUserData(user.id);
       if (cachedUser) {
@@ -349,7 +350,7 @@ export default function HomePage() {
     }
   }, [user]);
 
-  // ---- Background API fetch (uses Cloudflare) ----
+  // ---- Background API fetch ----
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -557,7 +558,8 @@ export default function HomePage() {
     ? displayAnime
     : displayAnime.filter(a => (a.genre || '').toLowerCase().includes(activeGenre.toLowerCase()));
 
-  const newlyAdded = useMemo(() => {
+  // ----- Full (unsliced) lists for "View All" -----
+  const fullNewlyAdded = useMemo(() => {
     if (newlyAddedIds.length > 0) {
       return newlyAddedIds
         .map(id => genreFiltered.find(a => a.id === id))
@@ -565,53 +567,64 @@ export default function HomePage() {
     }
     return [...genreFiltered]
       .filter(a => a.created_at)
-      .sort((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime())
-      .slice(0, 10);
+      .sort((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
   }, [genreFiltered, newlyAddedIds]);
 
-  const topRated = useMemo(() => {
+  const fullTopRated = useMemo(() => {
     return [...genreFiltered]
       .filter(a => (a.score || 0) >= 7)
-      .sort((a, b) => (b.score || 0) - (a.score || 0))
-      .slice(0, 12);
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
   }, [genreFiltered]);
 
-  const trendingAnime = useMemo(() => {
-    return [...genreFiltered].sort((a, b) => (parseInt(b.id) - parseInt(a.id)));
-  }, [genreFiltered]);
-
-  const uniqueTypes = [...new Set(displayAnime.map(a => a.type).filter(Boolean))];
-
-  const popularAnime = useMemo(() => {
-    return (popularTypeFilter === 'All'
-      ? genreFiltered
-      : genreFiltered.filter(a => a.type === popularTypeFilter)
-    ).sort((a, b) => (b.score || 0) - (a.score || 0));
-  }, [genreFiltered, popularTypeFilter]);
-
-  const featuredAnime = featuredIds.length > 0
-    ? animeList.find(a => a.id === featuredIds[currentFeaturedIndex % featuredIds.length])
-    : (displayAnime.length > 0 ? displayAnime[0] : null);
-
-  const latestEpisodes = useMemo(() => {
+  const fullLatestEpisodes = useMemo(() => {
     const filtered = episodesWithLang.filter(ep => displayAnime.some(a => a.id === ep.anime_id));
     return filtered.sort((a, b) => {
       const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
       const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
       if (dateA && dateB) return dateB - dateA;
       return (parseInt(b.id) - parseInt(a.id));
-    }).slice(0, 12);
+    });
   }, [episodesWithLang, displayAnime]);
+
+  // ---- Sliced lists for carousels ----
+  const newlyAdded = useMemo(() => fullNewlyAdded.slice(0, 10), [fullNewlyAdded]);
+  const topRated = useMemo(() => fullTopRated.slice(0, 12), [fullTopRated]);
+  const latestEpisodes = useMemo(() => fullLatestEpisodes.slice(0, 12), [fullLatestEpisodes]);
+
+  const trendingAnime = useMemo(() => {
+    return [...genreFiltered].sort((a, b) => (parseInt(b.id) - parseInt(a.id)));
+  }, [genreFiltered]);
+
+  // ---- Normalised types ----
+  const uniqueTypes = useMemo(() => {
+    const types = displayAnime
+      .map(a => normalizeType(a.type))
+      .filter(Boolean);
+    return [...new Set(types)];
+  }, [displayAnime]);
+
+  // ---- Popular shows (full, unsliced) ----
+  const popularAnime = useMemo(() => {
+    const filtered = popularTypeFilter === 'All'
+      ? genreFiltered
+      : genreFiltered.filter(a => normalizeType(a.type) === popularTypeFilter);
+    return filtered.sort((a, b) => (b.score || 0) - (a.score || 0));
+  }, [genreFiltered, popularTypeFilter]);
+
+  const featuredAnime = featuredIds.length > 0
+    ? animeList.find(a => a.id === featuredIds[currentFeaturedIndex % featuredIds.length])
+    : (displayAnime.length > 0 ? displayAnime[0] : null);
 
   const publishedNews = newsItems.filter(n => n.status === 'published').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const mostWatched = [...displayAnime].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
   const DAYS_SHORT = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
+  // ---- Full list overlay items ----
   const fullListItems = useMemo(() => {
     if (!fullList) return [];
     switch (fullList.type) {
       case 'updates':
-        return latestEpisodes.map(ep => {
+        return fullLatestEpisodes.map(ep => {
           const anime = displayAnime.find(a => a.id === ep.anime_id);
           return { ...ep, ...anime };
         });
@@ -620,13 +633,13 @@ export default function HomePage() {
       case 'trending':
         return trendingAnime;
       case 'newlyAdded':
-        return newlyAdded;
+        return fullNewlyAdded;
       case 'topRated':
-        return topRated;
+        return fullTopRated;
       default:
         return trendingAnime;
     }
-  }, [fullList, latestEpisodes, displayAnime, popularAnime, trendingAnime, newlyAdded, topRated]);
+  }, [fullList, fullLatestEpisodes, displayAnime, popularAnime, trendingAnime, fullNewlyAdded, fullTopRated]);
 
   // ---- Handlers ----
   const toggleWatchlist = async (anime: any) => {
@@ -998,11 +1011,21 @@ export default function HomePage() {
                 </div>
               </section>
 
-              {/* Recommended */}
+              {/* ✅ Recommended – now shows 8 items + View all */}
               <section className="space-y-2 px-3">
-                <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400">🎯 Recommended</h3>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                    🎯 Recommended
+                  </h3>
+                  <button
+                    onClick={() => setFullList({ type: 'trending', title: 'Trending Now' })}
+                    className="text-[10px] md:text-[11px] font-semibold text-amber-500 hover:text-amber-400"
+                  >
+                    View all
+                  </button>
+                </div>
                 <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
-                  {trendingAnime.slice(0, 4).map(anime => (
+                  {trendingAnime.slice(0, 8).map(anime => (
                     <AnimeCard
                       key={anime.id}
                       anime={anime}
@@ -1017,7 +1040,7 @@ export default function HomePage() {
             {/* ==================== END MOBILE ONLY SECTIONS ==================== */}
           </div>
 
-          {/* ==================== DESKTOP SIDEBAR (unchanged) ==================== */}
+          {/* ==================== DESKTOP SIDEBAR ==================== */}
           <div className="hidden lg:flex lg:w-[30%] flex-col gap-5 sticky top-20">
             <div className="bg-[#0a0b12] border border-zinc-900/60 rounded-xl p-4 space-y-3">
               <SectionHeader title="Continue Watching" icon="📺" onViewAll={goToWatchHistory} />

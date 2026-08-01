@@ -1367,12 +1367,10 @@ function WatchContent() {
                 onLoad={() => setPlayerLoading(false)}
                 {...(() => {
                   const url = currentServerUrl.toLowerCase();
-                  // 🆕 Include vaplayer.ru here so VidAPI embeds are not sandboxed
                   const needsNoSandbox = url.includes('vidnest.fun') || url.includes('megaplay.buzz') || url.includes('vaplayer.ru');
                   if (needsNoSandbox) {
                     return {
                       style: {
-                        // For Vidnest, block interactions until shield is tapped.
                         pointerEvents: (isVidnest && (shieldVisible || !iframeEnabled)) ? 'none' : 'auto',
                       },
                     };
@@ -1544,8 +1542,10 @@ function WatchContent() {
               onChange={(e) => handleServerChange(e.target.value)}
               className="bg-zinc-800 border border-zinc-700 rounded-lg px-1.5 sm:px-2 py-1 sm:py-1.5 text-[10px] sm:text-xs text-white touch-manipulation whitespace-nowrap shrink-0"
             >
-              {currentServerKeys.map((server) => (
-                <option key={server} value={server}>{server}</option>
+              {currentServerKeys.map((server, index) => (
+                <option key={server} value={server}>
+                  Server {index + 1}
+                </option>
               ))}
             </select>
           )}
