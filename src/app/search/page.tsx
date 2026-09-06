@@ -1,5 +1,8 @@
 "use client";
 
+
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
 import { useSearchParams, usePathname } from 'next/navigation';
 import Image from 'next/image';
