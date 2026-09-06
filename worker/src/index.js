@@ -20,12 +20,10 @@ export default {
       'Content-Type': 'application/json'
     };
 
-    // Handle preflight OPTIONS requests
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
 
-    // Root route – API information
     if (path === '/' || path === '') {
       return new Response(JSON.stringify({
         name: 'AnimeTown CMS API',
@@ -43,7 +41,6 @@ export default {
     }
 
     try {
-      // Route requests to the appropriate handler
       if (path === '/api/anime' || path === '/api/anime/') {
         return await animeHandler.fetch(request, env);
       }
@@ -66,7 +63,6 @@ export default {
         return await checkPasswordHandler.fetch(request, env);
       }
 
-      // If no route matches, return 404
       return new Response(JSON.stringify({ error: 'Not found', path }), {
         status: 404,
         headers: corsHeaders

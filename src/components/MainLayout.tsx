@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Tv, Search, House, Bookmark, Clock, User, Compass,
   ChevronDown, Video, Share2, Camera, LogIn, LogOut, Home, Loader2, Film, ListOrdered
 } from 'lucide-react';
 import { useApp } from "@/lib/AppContext";
-import { CloudflareAPI } from "@/lib/db-client"; // ✅ Cloudflare client
+import { CloudflareAPI } from "@/lib/db-client";
 
 // ----- LANGUAGE DISPLAY NAMES -----
 const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
@@ -37,6 +37,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const router = useRouter();
   const { user, selectedLanguage, setSelectedLanguage, loading } = useApp();
+
+  // ----- Pending navigation state -----
+  const [isPending, startTransition] = useTransition();
 
   const desktopLangRef = useRef<HTMLDivElement>(null);
   const mobileLangRef = useRef<HTMLDivElement>(null);
@@ -183,17 +186,20 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     };
   }, []);
 
+  // ----- Navigation with transition -----
   const handleNavigate = (page: string, tab?: string, params?: any) => {
     setActiveDropdown(null);
-    if (page === 'watch' && params?.anime) {
-      const url = params.ep 
-        ? `/watch?anime=${params.anime}&ep=${params.ep}` 
-        : `/watch?anime=${params.anime}`;
-      router.push(url);
-      return;
-    }
-    const url = tab ? `/${page}?tab=${tab}` : `/${page === "home" ? "" : page}`;
-    router.push(url || "/");
+    startTransition(() => {
+      if (page === 'watch' && params?.anime) {
+        const url = params.ep 
+          ? `/watch?anime=${params.anime}&ep=${params.ep}` 
+          : `/watch?anime=${params.anime}`;
+        router.push(url);
+        return;
+      }
+      const url = tab ? `/${page}?tab=${tab}` : `/${page === "home" ? "" : page}`;
+      router.push(url || "/");
+    });
   };
 
   const handleSignOut = async () => {
@@ -227,15 +233,13 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
   const isAdminPage = pathname.startsWith("/admin");
 
-  // 🔥 SHOW LANGUAGE ON SEARCH TOO
   const shouldShowLanguage = (): boolean => {
     if (pathname === "/" || pathname === "/home") return true;
     if (pathname.startsWith("/watch")) return true;
-    if (pathname.startsWith("/search")) return true; // added
+    if (pathname.startsWith("/search")) return true;
     return false;
   };
 
-  // 🔥 SHOW MOBILE HEADER ON SEARCH TOO
   const shouldShowMobileHeader = (): boolean => {
     return pathname === "/" || 
            pathname === "/home" || 
@@ -337,6 +341,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
               <span className="text-zinc-500 text-[10px]">Loading…</span>
             )}
           </div>
+
+          {/* Loading indicator */}
+          {isPending && (
+            <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+          )}
 
           {loading ? (
             <div className="w-20 h-8 flex items-center justify-center">
@@ -513,11 +522,26 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   // ------------------------------
   return (
     <div className="relative min-h-screen bg-[#07070a] text-white flex flex-col">
+      {/* Top loading bar for desktop navigation */}
+      {isPending && (
+        <div className="fixed top-0 left-0 right-0 z-[60] h-0.5 bg-amber-500 animate-loading-bar shadow-[0_0_10px_rgba(245,158,11,0.6)]" />
+      )}
+
       {!isAdminPage && <DesktopHeader />}
       {!isAdminPage && <MobileHeader />}
       <main className="flex-1">{children}</main>
       {!isAdminPage && <MobileBottomNav />}
       {!isAdminPage && <Footer />}
+
+      <style jsx global>{`
+        @keyframes loadingBar {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        .animate-loading-bar {
+          animation: loadingBar 1s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   );
 }

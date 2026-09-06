@@ -1,57 +1,78 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
+import { useSearchParams, usePathname } from 'next/navigation';
+import Image from 'next/image';
 import { 
   Search, X, ChevronDown, Flame, Star, ChevronLeft, ChevronRight,
-  Bookmark, Play
+  Bookmark, Play, Filter, ArrowUp
 } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import { supabase } from '@/lib/supabaseClient';
-import { CloudflareAPI } from '@/lib/db-client'; 
-// ============================================================
-// TYPES
-// ============================================================
-interface Anime {
-  id: string; // Cloudflare uses UUID
-  title: string;
-  image: string;
-  type: string;
-  score: number;
-  genre: string;
-  views?: number;
-  year: number;
-  episodes: number;
-  status: string;
-}
+import { CloudflareAPI } from '@/lib/db-client';
 
-interface Episode {
-  id: string;
-  anime_id: string;
-  number: number;
-  title: string;
-  languages?: Record<string, string>;
+// ============================================================
+// DEBOUNCE HOOK
+// ============================================================
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
 }
 
 // ============================================================
-// CACHE HELPERS
+// FALLBACK IMAGE
 // ============================================================
-const SEARCH_CACHE_KEY = 'searchDataCache';
+const FALLBACK_IMAGE = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="200" height="280">
+    <rect width="200" height="280" fill="#1a1a2e"/>
+    <rect x="35" y="45" width="130" height="95" rx="5" fill="#1f1f2e" stroke="#ef4444" stroke-width="2.5"/>
+    <rect x="80" y="140" width="40" height="12" rx="2" fill="#ef4444"/>
+    <line x1="100" y1="140" x2="100" y2="118" stroke="#ef4444" stroke-width="2.5"/>
+    <circle cx="100" cy="92" r="22" fill="none" stroke="#ef4444" stroke-width="2"/>
+    <polygon points="82,92 118,80 118,104" fill="#ef4444" opacity="0.25"/>
+    <text x="100" y="178" font-family="Arial, sans-serif" font-size="11" fill="#555" text-anchor="middle">No Preview</text>
+  </svg>`
+)}`;
 
-function getCachedSearchData() {
+function getSafeImage(url: string | undefined | null): string {
+  if (!url || url.trim() === '') return FALLBACK_IMAGE;
+  return url;
+}
+
+// ============================================================
+// CACHE HELPERS – SHARED WITH HOME PAGE
+// ============================================================
+const HOME_CACHE_KEY = 'homeDataCache';
+
+function getCachedHomeData() {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(SEARCH_CACHE_KEY);
+    const raw = localStorage.getItem(HOME_CACHE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+    const parsed = JSON.parse(raw);
+    return {
+      animeList: parsed.animeList || [],
+      episodes: parsed.episodes || [],
+    };
+  } catch { return null; }
 }
 
-function saveSearchCache(animeList: Anime[], episodes: Episode[]) {
+function saveToHomeCache(animeList: any[], episodes: any[]) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({ animeList, episodes }));
+    // Get existing cache to preserve other fields (featuredIds, etc.)
+    const existingRaw = localStorage.getItem(HOME_CACHE_KEY);
+    const existing = existingRaw ? JSON.parse(existingRaw) : {};
+    const updated = {
+      ...existing,
+      animeList,
+      episodes,
+    };
+    localStorage.setItem(HOME_CACHE_KEY, JSON.stringify(updated));
   } catch {}
 }
 
@@ -61,9 +82,7 @@ function getCachedWatchlist(userId: string): any[] | null {
     const raw = localStorage.getItem(`searchWatchlist_${userId}`);
     if (!raw) return null;
     return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function saveWatchlistCache(userId: string, items: any[]) {
@@ -76,19 +95,28 @@ function saveWatchlistCache(userId: string, items: any[]) {
 // ============================================================
 // COMPONENTS
 // ============================================================
-
 function AnimeCard({ anime, isMobile = false, watchlistItems, onToggleWatchlist, onOpenWatch }: any) {
   const isInList = watchlistItems.some((i: any) => i.id === anime.id);
+  const [imgError, setImgError] = useState(false);
   
   return (
     <div
       onClick={() => onOpenWatch(anime)}
-      className={`group cursor-pointer bg-[#0d0d14] border border-zinc-900/80 rounded-xl overflow-hidden hover:border-amber-500/20 transition-all shadow-sm ${
+      className={`group cursor-pointer bg-[#0d0d14] border border-zinc-900/80 rounded-xl overflow-hidden hover:border-amber-500/20 transition-all duration-300 hover:-translate-y-0.5 shadow-sm ${
         isMobile ? 'p-1.5 space-y-1' : 'p-2.5 space-y-2'
       }`}
     >
       <div className="relative aspect-[3/4] bg-zinc-900 rounded-lg overflow-hidden">
-        <img src={anime.image} alt={anime.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        <Image
+          src={imgError ? FALLBACK_IMAGE : getSafeImage(anime.image)}
+          alt={anime.title}
+          fill
+          className="object-cover group-hover:scale-105 transition-transform duration-500"
+          loading="lazy"
+          onError={() => setImgError(true)}
+          unoptimized
+          sizes={isMobile ? '105px' : '200px'}
+        />
         <button 
           onClick={(e) => { e.stopPropagation(); onToggleWatchlist(anime); }} 
           className="absolute top-1.5 right-1.5 p-1 bg-black/60 rounded-full text-white/70 hover:text-yellow-400 transition-colors z-10"
@@ -116,27 +144,69 @@ function AnimeCard({ anime, isMobile = false, watchlistItems, onToggleWatchlist,
   );
 }
 
-function Pagination({ currentPage, totalPages, onPageChange, className = '' }: any) {
+function Pagination({ currentPage, totalPages, onPageChange, className = '', isMobile = false }: any) {
   if (totalPages <= 1) return null;
   
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisible = isMobile ? 3 : 5;
+    let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    let end = Math.min(totalPages, start + maxVisible - 1);
+    if (end - start < maxVisible - 1) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  };
+
   return (
     <div className={`flex items-center justify-center gap-1.5 pt-2 ${className}`}>
       <button
         onClick={() => onPageChange(Math.max(1, currentPage - 1))}
         disabled={currentPage === 1}
         className="flex items-center gap-1 text-zinc-500 hover:text-amber-400 transition-colors text-[11px] font-bold px-2.5 py-1 rounded-lg hover:bg-zinc-900 disabled:opacity-40"
+        aria-label="Previous page"
       >
-        <ChevronLeft className="w-3.5 h-3.5" /> Prev
+        <ChevronLeft className="w-3.5 h-3.5" />
+        {!isMobile && 'Prev'}
       </button>
-      <span className="text-xs text-zinc-400 font-bold px-1.5">
-        {currentPage} / {totalPages}
-      </span>
+      
+      {!isMobile && currentPage > 3 && (
+        <>
+          <button onClick={() => onPageChange(1)} className="w-8 h-8 flex items-center justify-center text-xs font-bold text-zinc-400 hover:text-amber-400 rounded-lg hover:bg-zinc-900 transition-colors">1</button>
+          <span className="text-zinc-600 text-xs">…</span>
+        </>
+      )}
+      
+      {getPageNumbers().map((page) => (
+        <button
+          key={page}
+          onClick={() => onPageChange(page)}
+          className={`w-8 h-8 flex items-center justify-center text-xs font-bold rounded-lg transition-all ${
+            page === currentPage
+              ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+              : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-900'
+          }`}
+        >
+          {page}
+        </button>
+      ))}
+      
+      {!isMobile && currentPage < totalPages - 2 && (
+        <>
+          <span className="text-zinc-600 text-xs">…</span>
+          <button onClick={() => onPageChange(totalPages)} className="w-8 h-8 flex items-center justify-center text-xs font-bold text-zinc-400 hover:text-amber-400 rounded-lg hover:bg-zinc-900 transition-colors">{totalPages}</button>
+        </>
+      )}
+      
       <button
         onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
         disabled={currentPage === totalPages}
         className="flex items-center gap-1 text-zinc-400 hover:text-amber-400 transition-colors text-[11px] font-bold px-2.5 py-1 rounded-lg hover:bg-zinc-900 disabled:opacity-40"
+        aria-label="Next page"
       >
-        Next <ChevronRight className="w-3.5 h-3.5" />
+        {!isMobile && 'Next'}
+        <ChevronRight className="w-3.5 h-3.5" />
       </button>
     </div>
   );
@@ -152,9 +222,6 @@ function SkeletonCard() {
   );
 }
 
-// ============================================================
-// EMPTY STATE SVG (Search‑themed)
-// ============================================================
 function EmptySearchIllustration() {
   return (
     <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-32 h-32 mx-auto">
@@ -187,46 +254,82 @@ export default function SearchPage({
 }: {
   navigateTo?: (page: string, tab?: string, params?: any) => void;
 }) {
-  const { user, selectedLanguage, loading: authLoading } = useApp();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const { user, selectedLanguage } = useApp();
 
-  const [animeList, setAnimeList] = useState<Anime[]>([]);
-  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  // ---- Read initial filters from URL ----
+  const initialSearch = searchParams.get('q') || '';
+  const initialType = searchParams.get('type') || 'All';
+  const initialGenre = searchParams.get('genre') || 'All';
+  const initialSort = searchParams.get('sort') || 'Popular';
+  const initialPage = parseInt(searchParams.get('page') || '1', 10);
+
+  const [animeList, setAnimeList] = useState<any[]>([]);
+  const [episodes, setEpisodes] = useState<any[]>([]);
   const [watchlistItems, setWatchlistItems] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  const [dataFetched, setDataFetched] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeType, setActiveType] = useState('All');
-  const [sortBy, setSortBy] = useState('Popular');
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const debouncedSearch = useDebounce(searchQuery, 400);
+  const [activeType, setActiveType] = useState(initialType);
+  const [sortBy, setSortBy] = useState(initialSort);
   const [showGenreDropdown, setShowGenreDropdown] = useState(false);
-  const [selectedGenre, setSelectedGenre] = useState('All');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedGenre, setSelectedGenre] = useState(initialGenre);
+  const [currentPage, setCurrentPage] = useState(initialPage);
   const itemsPerPage = 18;
 
   const [mobilePage, setMobilePage] = useState(1);
+  const [showBackToTop, setShowBackToTop] = useState(false);
 
   const genreDropdownRef = useRef<HTMLDivElement>(null);
   const mobileContentRef = useRef<HTMLDivElement>(null);
 
-  // ---- Instant cache load ----
-  useLayoutEffect(() => {
-    const cachedSearch = getCachedSearchData();
-    if (cachedSearch) {
-      setAnimeList(cachedSearch.animeList || []);
-      setEpisodes(cachedSearch.episodes || []);
-    }
-    if (user) {
-      const cachedWatchlist = getCachedWatchlist(user.id);
-      if (cachedWatchlist) {
-        setWatchlistItems(cachedWatchlist);
+  // ---- Silent URL update using window.history.replaceState ----
+  const updateURL = useCallback((params: Record<string, string>) => {
+    const current = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value && value !== 'All' && value !== 'Popular' && value !== '1') {
+        current.set(key, value);
       }
-    }
-    if (cachedSearch) {
-      setDataLoading(false);
-    }
-  }, [user]);
+    });
+    const url = `${pathname}?${current.toString()}`;
+    window.history.replaceState(null, '', url);
+  }, [pathname]);
 
-  // ---- Load anime & episodes from Cloudflare ----
   useEffect(() => {
+    updateURL({
+      q: debouncedSearch,
+      type: activeType,
+      genre: selectedGenre,
+      sort: sortBy,
+      page: String(currentPage),
+    });
+  }, [debouncedSearch, activeType, selectedGenre, sortBy, currentPage, updateURL]);
+
+  // ---- Scroll listener for back-to-top ----
+  useEffect(() => {
+    const handleScroll = () => setShowBackToTop(window.scrollY > 400);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // ---- Load anime & episodes from SHARED cache or API ----
+  useLayoutEffect(() => {
+    const cached = getCachedHomeData();
+    if (cached && cached.animeList.length > 0) {
+      setAnimeList(cached.animeList);
+      setEpisodes(cached.episodes);
+      setDataLoading(false);
+      setDataFetched(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Skip if we already have data
+    if (dataFetched && animeList.length > 0) return;
+
     const fetchData = async () => {
       setDataLoading(true);
       try {
@@ -238,14 +341,15 @@ export default function SearchPage({
         const freshEpisodes = episodesRes.episodes || [];
         setAnimeList(freshAnime);
         setEpisodes(freshEpisodes);
-        saveSearchCache(freshAnime, freshEpisodes);
+        saveToHomeCache(freshAnime, freshEpisodes);
+        setDataFetched(true);
       } catch (error) {
         console.error('Failed to fetch search data:', error);
       }
       setDataLoading(false);
     };
     fetchData();
-  }, []);
+  }, [dataFetched, animeList.length]);
 
   // ---- Load user's watchlist ----
   useEffect(() => {
@@ -253,7 +357,6 @@ export default function SearchPage({
       setWatchlistItems([]);
       return;
     }
-
     const loadWatchlist = async () => {
       try {
         const { data, error } = await supabase
@@ -276,17 +379,13 @@ export default function SearchPage({
         console.error('Error loading watchlist:', error);
       }
     };
-
     loadWatchlist();
   }, [user, animeList]);
 
   // ---- Outside click handler ----
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        genreDropdownRef.current &&
-        !genreDropdownRef.current.contains(event.target as Node)
-      ) {
+      if (genreDropdownRef.current && !genreDropdownRef.current.contains(event.target as Node)) {
         setShowGenreDropdown(false);
       }
     };
@@ -294,7 +393,7 @@ export default function SearchPage({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ---- Scroll to top when page changes ----
+  // ---- Scroll to top on page change ----
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     if (mobileContentRef.current) {
@@ -302,7 +401,7 @@ export default function SearchPage({
     }
   }, [currentPage, mobilePage]);
 
-  // ---- Language filtering ----
+  // ---- Filtering logic ----
   const languageFilteredAnime = useMemo(() => {
     if (selectedLanguage === 'all') return animeList;
     if (animeList.length === 0 || episodes.length === 0) return animeList;
@@ -317,10 +416,9 @@ export default function SearchPage({
   const displayAnime = languageFilteredAnime;
 
   const allGenres = useMemo(() => {
-    return [...new Set(displayAnime.flatMap(a => (a.genre || '').split(',').map(g => g.trim())).filter(Boolean))].sort();
+    return [...new Set(displayAnime.flatMap(a => (a.genre || '').split(',').map((g: string) => g.trim())).filter(Boolean))].sort();
   }, [displayAnime]);
 
-  // ---------- FIX: case‑insensitive type filter ----------
   const typeFiltered = useMemo(() => {
     if (activeType === 'All') return displayAnime;
     const lowerType = activeType.toLowerCase();
@@ -332,15 +430,15 @@ export default function SearchPage({
   }, [typeFiltered, selectedGenre]);
 
   const searchFiltered = useMemo(() => {
-    if (searchQuery.trim() === '') return genreFiltered;
-    const q = searchQuery.toLowerCase();
+    if (debouncedSearch.trim() === '') return genreFiltered;
+    const q = debouncedSearch.toLowerCase();
     return genreFiltered.filter(a => 
       a.title.toLowerCase().includes(q) || 
       (a.genre && a.genre.toLowerCase().includes(q))
     );
-  }, [genreFiltered, searchQuery]);
+  }, [genreFiltered, debouncedSearch]);
 
-  let sorted = useMemo(() => {
+  const sorted = useMemo(() => {
     const list = [...searchFiltered];
     if (sortBy === 'Popular') list.sort((a, b) => (b.views || 0) - (a.views || 0));
     else if (sortBy === 'Score') list.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -352,24 +450,25 @@ export default function SearchPage({
   const totalPages = Math.ceil(sorted.length / itemsPerPage);
   const pagedItems = sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const isSearching = searchQuery.trim() !== '';
+  const mobileItemsPerPage = 12;
+  const mobileTotalPages = Math.ceil(sorted.length / mobileItemsPerPage);
+  const mobilePagedItems = sorted.slice((mobilePage - 1) * mobileItemsPerPage, mobilePage * mobileItemsPerPage);
+
+  const isSearching = debouncedSearch.trim() !== '';
 
   const topResultsAnime = useMemo(() => {
-    return [...displayAnime].sort((a, b) => (b.views || 0) - (a.views || 0));
+    return [...displayAnime].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 10);
   }, [displayAnime]);
 
   const tvSeriesAnime = useMemo(() => {
-    return displayAnime.filter(a => a.type.toLowerCase() === 'tv' || a.type.toLowerCase() === 'tv series');
+    return displayAnime.filter(a => a.type.toLowerCase() === 'tv' || a.type.toLowerCase() === 'tv series').slice(0, 10);
   }, [displayAnime]);
 
   const moviesAnime = useMemo(() => {
-    return displayAnime.filter(a => a.type.toLowerCase() === 'movie');
+    return displayAnime.filter(a => a.type.toLowerCase() === 'movie').slice(0, 10);
   }, [displayAnime]);
 
-  const mobileFiltered = useMemo(() => sorted, [sorted]);
-  const mobileTotalPages = Math.ceil(mobileFiltered.length / itemsPerPage);
-  const mobilePagedItems = mobileFiltered.slice((mobilePage - 1) * itemsPerPage, mobilePage * itemsPerPage);
-
+  // ---- Handlers ----
   const clearSearch = () => { setSearchQuery(''); setCurrentPage(1); setMobilePage(1); };
 
   const toggleWatchlist = useCallback(async (anime: any) => {
@@ -417,24 +516,29 @@ export default function SearchPage({
     setMobilePage(1);
   };
 
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
+  const handlePageChange = (page: number) => setCurrentPage(page);
+  const handleMobilePageChange = (page: number) => setMobilePage(page);
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setActiveType('All');
+    setSelectedGenre('All');
+    setSortBy('Popular');
+    setCurrentPage(1);
+    setMobilePage(1);
   };
 
-  const handleMobilePageChange = (page: number) => {
-    setMobilePage(page);
-  };
-
-  const showMobileFirstPageRows = !isSearching && mobilePage === 1 && activeType === 'All' && selectedGenre === 'All';
+  const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
   const showSkeleton = dataLoading && !animeList.length;
+  const showMobileFirstPageRows = !isSearching && mobilePage === 1 && activeType === 'All' && selectedGenre === 'All';
 
   // ============================================================
   // RENDER
   // ============================================================
   return (
     <>
-      {/* ==================== DESKTOP VIEW ==================== */}
+      {/* DESKTOP VIEW */}
       <div className="hidden md:flex flex-col flex-1">
         <main className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-8 space-y-8">
           <div className="space-y-4 bg-[#0d0d14] p-6 rounded-2xl border border-zinc-900 shadow-sm">
@@ -519,8 +623,17 @@ export default function SearchPage({
               {[...Array(12)].map((_, i) => <SkeletonCard key={i} />)}
             </div>
           ) : pagedItems.length === 0 ? (
-            <div className="text-center py-16 text-zinc-500">
-              {isSearching ? `No results for "${searchQuery}"` : 'No anime found.'}
+            <div className="text-center py-16">
+              <EmptySearchIllustration />
+              <h3 className="text-lg font-bold text-white mt-4">No results found</h3>
+              <p className="text-sm text-zinc-400 mt-1">
+                {isSearching ? `No anime match "${searchQuery}"` : 'Try adjusting your filters'}
+              </p>
+              {(isSearching || searchQuery || activeType !== 'All' || selectedGenre !== 'All') && (
+                <button onClick={clearFilters} className="mt-4 px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-lg text-amber-400 text-xs font-bold transition-colors">
+                  Clear all filters
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -545,10 +658,9 @@ export default function SearchPage({
         </main>
       </div>
 
-      {/* ==================== MOBILE VIEW ==================== */}
+      {/* MOBILE VIEW */}
       <div className="block md:hidden flex-1 flex flex-col">
-        {/* Search Bar – with top gap (pt-3) */}
-        <div className="px-3 pt-3 pb-2 bg-[#07070a] border-b border-zinc-900/40">
+        <div className="sticky top-0 z-20 px-3 pt-3 pb-2 bg-[#07070a]/95 backdrop-blur-xl border-b border-zinc-900/40">
           <div className="flex items-center gap-2">
             <div className="flex-1 flex items-center bg-[#0d0d12] border border-zinc-800 rounded-xl px-3 py-2 gap-2 focus-within:border-amber-500/40 transition-all">
               <Search className="w-3.5 h-3.5 text-zinc-500" />
@@ -567,7 +679,6 @@ export default function SearchPage({
             </div>
           </div>
 
-          {/* Mobile filter chips – type only */}
           <div className="mt-1.5 flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5">
             {['All', 'TV', 'Movie', 'OVA', 'ONA', 'Special'].map((type) => (
               <button
@@ -582,18 +693,34 @@ export default function SearchPage({
                 {type === 'All' ? 'All' : type}
               </button>
             ))}
+            <div className="flex-shrink-0 w-px h-5 bg-zinc-800" />
+            <button
+              onClick={clearFilters}
+              className="text-[9px] font-bold px-2.5 py-1 rounded-lg border border-zinc-800 text-zinc-400 hover:border-amber-500/50 hover:text-amber-400"
+            >
+              <Filter className="w-3 h-3 inline mr-0.5" /> Clear
+            </button>
           </div>
         </div>
 
-        {/* ===== MOBILE CONTENT (scrollable) ===== */}
-        <main ref={mobileContentRef} className="flex-1 overflow-y-auto pb-24 scrollbar-none">
+        <main ref={mobileContentRef} className="flex-1 overflow-y-auto pb-20 scrollbar-none">
           {showSkeleton ? (
             <div className="px-3 pt-2 grid grid-cols-2 gap-2.5">
-              {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
+              {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="px-3 pt-12 flex flex-col items-center justify-center text-center">
+              <EmptySearchIllustration />
+              <h3 className="text-base font-bold text-white mt-4">Nothing found</h3>
+              <p className="text-xs text-zinc-400 mt-1 max-w-xs">
+                {searchQuery ? `No results for "${searchQuery}"` : 'Try adjusting your filters'}
+              </p>
+              <button onClick={clearFilters} className="mt-4 px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-lg text-amber-400 text-xs font-bold transition-colors">
+                Clear all filters
+              </button>
             </div>
           ) : (
             <>
-              {/* FIRST PAGE – rows only */}
               {showMobileFirstPageRows && (
                 <div className="space-y-4 pt-2">
                   {topResultsAnime.length > 0 && (
@@ -602,9 +729,9 @@ export default function SearchPage({
                         <Flame className="w-3 h-3 text-amber-500 fill-current" />
                         <h3 className="text-[10px] font-black uppercase tracking-wider text-zinc-300">Top Results</h3>
                       </div>
-                      <div className="overflow-x-auto px-3 flex gap-2 scrollbar-none">
+                      <div className="overflow-x-auto px-3 flex gap-2 scrollbar-none snap-x snap-mandatory scroll-smooth">
                         {topResultsAnime.map((anime) => (
-                          <div key={anime.id} className="min-w-[105px] w-[105px] flex-shrink-0">
+                          <div key={anime.id} className="min-w-[105px] w-[105px] flex-shrink-0 snap-start">
                             <AnimeCard 
                               anime={anime} 
                               isMobile 
@@ -624,9 +751,9 @@ export default function SearchPage({
                         <span className="text-zinc-400 text-xs">📺</span>
                         <h3 className="text-[10px] font-black uppercase tracking-wider text-zinc-300">TV Series</h3>
                       </div>
-                      <div className="overflow-x-auto px-3 flex gap-2 scrollbar-none">
+                      <div className="overflow-x-auto px-3 flex gap-2 scrollbar-none snap-x snap-mandatory scroll-smooth">
                         {tvSeriesAnime.map((anime) => (
-                          <div key={anime.id} className="min-w-[105px] w-[105px] flex-shrink-0">
+                          <div key={anime.id} className="min-w-[105px] w-[105px] flex-shrink-0 snap-start">
                             <AnimeCard 
                               anime={anime} 
                               isMobile 
@@ -646,9 +773,9 @@ export default function SearchPage({
                         <span className="text-zinc-400 text-xs">🎬</span>
                         <h3 className="text-[10px] font-black uppercase tracking-wider text-zinc-300">Movies</h3>
                       </div>
-                      <div className="overflow-x-auto px-3 flex gap-2 scrollbar-none">
+                      <div className="overflow-x-auto px-3 flex gap-2 scrollbar-none snap-x snap-mandatory scroll-smooth">
                         {moviesAnime.map((anime) => (
-                          <div key={anime.id} className="min-w-[105px] w-[105px] flex-shrink-0">
+                          <div key={anime.id} className="min-w-[105px] w-[105px] flex-shrink-0 snap-start">
                             <AnimeCard 
                               anime={anime} 
                               isMobile 
@@ -662,56 +789,68 @@ export default function SearchPage({
                     </section>
                   )}
 
-                  <div className="pb-4">
+                  <div className="px-3 pb-4">
                     <Pagination 
                       currentPage={mobilePage} 
                       totalPages={mobileTotalPages} 
                       onPageChange={handleMobilePageChange} 
-                      className="pt-1"
+                      isMobile
                     />
                   </div>
                 </div>
               )}
 
-              {/* PAGE 2+ OR FILTERED – Grid only */}
               {!showMobileFirstPageRows && (
                 <div className="px-3 pt-2 space-y-3 pb-4">
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {mobilePagedItems.length === 0 ? (
-                      <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
-                        <EmptySearchIllustration />
-                        <h3 className="text-base font-bold text-white mt-4">Nothing found</h3>
-                        <p className="text-xs text-zinc-400 mt-1 max-w-xs">
-                          {searchQuery ? `No results for "${searchQuery}"` : 'Try adjusting your filters'}
-                        </p>
-                      </div>
-                    ) : (
-                      mobilePagedItems.map((anime: any) => (
-                        <AnimeCard 
-                          key={anime.id} 
-                          anime={anime} 
-                          isMobile 
-                          watchlistItems={watchlistItems}
-                          onToggleWatchlist={toggleWatchlist}
-                          onOpenWatch={openWatch}
-                        />
-                      ))
-                    )}
-                  </div>
-                  {mobilePagedItems.length > 0 && (
-                    <div className="mb-4">
-                      <Pagination 
-                        currentPage={mobilePage} 
-                        totalPages={mobileTotalPages} 
-                        onPageChange={handleMobilePageChange} 
-                      />
+                  {mobilePagedItems.length === 0 ? (
+                    <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
+                      <EmptySearchIllustration />
+                      <h3 className="text-base font-bold text-white mt-4">Nothing found</h3>
+                      <p className="text-xs text-zinc-400 mt-1 max-w-xs">
+                        {searchQuery ? `No results for "${searchQuery}"` : 'Try adjusting your filters'}
+                      </p>
                     </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {mobilePagedItems.map((anime: any) => (
+                          <AnimeCard 
+                            key={anime.id} 
+                            anime={anime} 
+                            isMobile 
+                            watchlistItems={watchlistItems}
+                            onToggleWatchlist={toggleWatchlist}
+                            onOpenWatch={openWatch}
+                          />
+                        ))}
+                      </div>
+                      {mobilePagedItems.length > 0 && (
+                        <div className="mb-4">
+                          <Pagination 
+                            currentPage={mobilePage} 
+                            totalPages={mobileTotalPages} 
+                            onPageChange={handleMobilePageChange} 
+                            isMobile
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
             </>
           )}
         </main>
+
+        <button
+          onClick={scrollToTop}
+          className={`fixed bottom-24 right-4 z-30 p-2.5 rounded-full bg-amber-500 text-black shadow-lg shadow-amber-500/30 transition-all duration-300 ${
+            showBackToTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'
+          }`}
+          aria-label="Back to top"
+        >
+          <ArrowUp className="w-4 h-4" />
+        </button>
       </div>
     </>
   );

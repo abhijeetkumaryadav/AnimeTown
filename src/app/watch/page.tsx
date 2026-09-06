@@ -6,7 +6,7 @@ import {
   Play, Pause, RotateCcw, RotateCw, Volume2, Maximize, ArrowLeft,
   Share2, Star, Bookmark, Send,
   AlertCircle, Loader2, VolumeX, LogIn,
-  Flag
+  Flag, CheckCircle
 } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import { supabase } from '@/lib/supabaseClient';
@@ -69,6 +69,54 @@ interface RawEpisode {
 }
 
 // ============================================================
+// SHARED CACHE HELPERS
+// ============================================================
+const HOME_CACHE_KEY = 'homeDataCache';
+
+function getCachedHomeData() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(HOME_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function saveToHomeCache(animeList: any[], episodes: any[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    const existingRaw = localStorage.getItem(HOME_CACHE_KEY);
+    const existing = existingRaw ? JSON.parse(existingRaw) : {};
+    const updated = {
+      ...existing,
+      animeList,
+      episodes,
+    };
+    localStorage.setItem(HOME_CACHE_KEY, JSON.stringify(updated));
+  } catch {}
+}
+
+function getWatchCacheKey(animeId: string) { return `watchCache_${animeId}`; }
+function getCachedWatchData(animeId: string) {
+  if (typeof window === 'undefined') return null;
+  try { const raw = localStorage.getItem(getWatchCacheKey(animeId)); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function saveWatchCache(animeId: string, data: any) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(getWatchCacheKey(animeId), JSON.stringify(data)); } catch {}
+}
+
+function getPublicCommentsCacheKey(animeId: string) { return `publicComments_${animeId}`; }
+function getPublicCommentsCache(animeId: string) {
+  if (typeof window === 'undefined') return null;
+  try { const raw = localStorage.getItem(getPublicCommentsCacheKey(animeId)); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function savePublicCommentsCache(animeId: string, comments: any[]) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(getPublicCommentsCacheKey(animeId), JSON.stringify(comments)); } catch {}
+}
+
+// ============================================================
 // PROXY & HELPERS
 // ============================================================
 function getProxiedUrl(url: string): string {
@@ -94,35 +142,26 @@ function formatEmbedUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return '';
 
-  // ---- YouTube ----
   const ytMatch = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-  if (ytMatch) {
-    return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0`;
-  }
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0`;
 
-  // ---- Vimeo ----
   const vimeoMatch = trimmed.match(/vimeo\.com\/(\d+)/);
   if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`;
 
-  // ---- Dailymotion ----
   const dailymotionMatch = trimmed.match(/dailymotion\.com\/video\/([a-zA-Z0-9]+)/);
   if (dailymotionMatch) return `https://www.dailymotion.com/embed/video/${dailymotionMatch[1]}?autoplay=1`;
 
-  // ---- Google Drive ----
   const gdriveMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (gdriveMatch) return `https://drive.google.com/file/d/${gdriveMatch[1]}/preview`;
 
-  // ---- OK.ru ----
   const okMatch = trimmed.match(/ok\.ru\/video\/(\d+)/);
   if (okMatch) return `https://ok.ru/videoembed/${okMatch[1]}`;
 
-  // ---- Nxsha ----
   if (trimmed.includes('nxsha.app')) {
     const match = trimmed.match(/\/watch\/tv\/(\d+)\/(\d+)\/(\d+)/);
     if (match) return `https://web.nxsha.app/embed/tv/${match[1]}/${match[2]}/${match[3]}`;
   }
 
-  // ---- Vidnest (use as-is, add autoplay=0) ----
   if (trimmed.includes('vidnest.fun')) {
     try {
       const urlObj = new URL(trimmed);
@@ -130,42 +169,636 @@ function formatEmbedUrl(url: string): string {
         urlObj.searchParams.set('autoplay', '0');
       }
       return urlObj.toString();
-    } catch {
-      return trimmed;
-    }
+    } catch { return trimmed; }
   }
 
-  // ---- Already an embed URL ----
   if (trimmed.includes('/embed/')) return trimmed;
-
-  // ---- Fallback: return as-is ----
   return trimmed;
 }
 
 // ============================================================
-// CACHE HELPERS
+// FALLBACK IMAGE
 // ============================================================
-function getWatchCacheKey(animeId: string) { return `watchCache_${animeId}`; }
-function getCachedWatchData(animeId: string) {
-  if (typeof window === 'undefined') return null;
-  try { const raw = localStorage.getItem(getWatchCacheKey(animeId)); return raw ? JSON.parse(raw) : null; } catch { return null; }
-}
-function saveWatchCache(animeId: string, data: any) {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem(getWatchCacheKey(animeId), JSON.stringify(data)); } catch {}
-}
-function getPublicCommentsCacheKey(animeId: string) { return `publicComments_${animeId}`; }
-function getPublicCommentsCache(animeId: string) {
-  if (typeof window === 'undefined') return null;
-  try { const raw = localStorage.getItem(getPublicCommentsCacheKey(animeId)); return raw ? JSON.parse(raw) : null; } catch { return null; }
-}
-function savePublicCommentsCache(animeId: string, comments: any[]) {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem(getPublicCommentsCacheKey(animeId), JSON.stringify(comments)); } catch {}
+const FALLBACK_IMAGE = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="200" height="280">
+    <rect width="200" height="280" fill="#1a1a2e"/>
+    <rect x="35" y="45" width="130" height="95" rx="5" fill="#1f1f2e" stroke="#ef4444" stroke-width="2.5"/>
+    <rect x="80" y="140" width="40" height="12" rx="2" fill="#ef4444"/>
+    <line x1="100" y1="140" x2="100" y2="118" stroke="#ef4444" stroke-width="2.5"/>
+    <circle cx="100" cy="92" r="22" fill="none" stroke="#ef4444" stroke-width="2"/>
+    <polygon points="82,92 118,80 118,104" fill="#ef4444" opacity="0.25"/>
+    <text x="100" y="178" font-family="Arial, sans-serif" font-size="11" fill="#555" text-anchor="middle">No Preview</text>
+  </svg>`
+)}`;
+
+function getSafeImage(url: string | undefined | null): string {
+  if (!url || url.trim() === '') return FALLBACK_IMAGE;
+  return url;
 }
 
 // ============================================================
-// WATCH CONTENT COMPONENT
+// COMPONENTS
+// ============================================================
+
+// ---- Episode List with Progress Bars ----
+function EpisodeList({ episodes, currentEpisode, onSelect, episodeProgress }: any) {
+  return (
+    <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5 sm:gap-2 max-h-64 overflow-y-auto pr-1">
+      {episodes.map((ep: Episode) => {
+        const isCurrent = ep.number === currentEpisode?.number;
+        const progress = episodeProgress[ep.number] || 0;
+        const isWatched = progress >= 100;
+        const isPartial = progress > 0 && progress < 100;
+        return (
+          <button
+            key={ep.id}
+            onClick={() => onSelect(ep)}
+            className={`relative px-1.5 sm:px-2 py-1.5 sm:py-2 rounded-lg text-xs font-bold transition-all text-center touch-manipulation ${
+              isCurrent
+                ? 'bg-red-600 text-white ring-2 ring-red-500/50 shadow-lg shadow-red-500/20'
+                : isWatched
+                ? 'bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/30'
+                : isPartial
+                ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-600/30'
+                : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+            }`}
+            aria-label={`Episode ${ep.number}${isWatched ? ' (Watched)' : isPartial ? ' (In progress)' : ''}`}
+          >
+            {ep.number}
+            {progress > 0 && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-700 rounded-b-lg overflow-hidden">
+                <div
+                  className={`h-full ${isWatched ? 'bg-green-500' : 'bg-yellow-500'}`}
+                  style={{ width: `${Math.min(progress, 100)}%` }}
+                />
+              </div>
+            )}
+            {isWatched && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
+                <CheckCircle className="w-2 h-2 text-white fill-current" />
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---- Premium Action Bar (without Next Episode button) ----
+function ActionBar({
+  anime,
+  episode,
+  isBookmarked,
+  onToggleBookmark,
+  onShare,
+  onReport,
+  reporting,
+  reportSuccess,
+  availableLanguages,
+  selectedLanguage,
+  onLanguageChange,
+  currentServerKeys,
+  selectedServer,
+  onServerChange,
+}: any) {
+  return (
+    <div className="flex flex-nowrap items-center gap-2 sm:gap-4 p-2 sm:p-3 bg-zinc-900/30 backdrop-blur-sm rounded-2xl border border-zinc-800/40 shadow-lg overflow-x-auto scrollbar-none">
+      <button
+        onClick={onToggleBookmark}
+        className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold transition-all touch-manipulation whitespace-nowrap shrink-0 ${
+          isBookmarked
+            ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40 shadow-lg shadow-amber-500/10'
+            : 'bg-zinc-800/60 text-zinc-400 hover:bg-zinc-700 hover:text-amber-400'
+        }`}
+        aria-label={isBookmarked ? 'Remove from watchlist' : 'Add to watchlist'}
+      >
+        <Bookmark className={`w-3.5 h-3.5 ${isBookmarked ? 'fill-current' : ''}`} />
+        <span className="hidden xs:inline">{isBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
+        <span className="xs:hidden">{isBookmarked ? '✓' : '+'}</span>
+      </button>
+
+      <button
+        onClick={onShare}
+        className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold bg-zinc-800/60 text-zinc-400 hover:bg-zinc-700 hover:text-blue-400 transition-all touch-manipulation whitespace-nowrap shrink-0"
+        aria-label="Share"
+      >
+        <Share2 className="w-3.5 h-3.5" />
+        <span className="hidden xs:inline">Share</span>
+      </button>
+
+      <button
+        onClick={onReport}
+        disabled={reporting || reportSuccess}
+        className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold bg-zinc-800/60 text-zinc-400 hover:bg-zinc-700 hover:text-red-400 transition-all touch-manipulation disabled:opacity-50 whitespace-nowrap shrink-0"
+        aria-label="Report broken link"
+      >
+        <Flag className="w-3.5 h-3.5" />
+        <span className="hidden xs:inline">{reportSuccess ? 'Reported' : 'Report'}</span>
+        {reportSuccess && <CheckCircle className="w-3 h-3 text-green-400" />}
+      </button>
+
+      <div className="h-6 w-px bg-zinc-700/50 shrink-0 hidden sm:block" />
+
+      {availableLanguages.length > 0 && (
+        <select
+          value={selectedLanguage}
+          onChange={(e) => onLanguageChange(e.target.value)}
+          className="bg-zinc-800/80 border border-zinc-700/50 rounded-full px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold text-white touch-manipulation whitespace-nowrap shrink-0 focus:outline-none focus:ring-2 focus:ring-red-500/50"
+          aria-label="Select language"
+        >
+          {availableLanguages.map((lang: string) => (
+            <option key={lang} value={lang}>{lang}</option>
+          ))}
+        </select>
+      )}
+
+      {currentServerKeys.length > 0 && (
+        <select
+          value={selectedServer}
+          onChange={(e) => onServerChange(e.target.value)}
+          className="bg-zinc-800/80 border border-zinc-700/50 rounded-full px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold text-white touch-manipulation whitespace-nowrap shrink-0 focus:outline-none focus:ring-2 focus:ring-red-500/50"
+          aria-label="Select server"
+        >
+          {currentServerKeys.map((server: string, index: number) => (
+            <option key={server} value={server}>
+              Server {index + 1}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
+// ---- Comment Section ----
+function CommentSection({ user, comments, newComment, setNewComment, onSubmit, onLogin }: any) {
+  const [visibleCount, setVisibleCount] = useState(10);
+  const visibleComments = comments.slice(0, visibleCount);
+  const hasMore = visibleCount < comments.length;
+
+  const loadMore = () => setVisibleCount(prev => Math.min(prev + 10, comments.length));
+
+  return (
+    <div className="space-y-4 lg:max-h-[500px] lg:overflow-y-auto lg:sticky lg:top-4">
+      <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">Comments ({comments.length})</h3>
+      {user ? (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder="Add a comment..."
+            className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none touch-manipulation focus:border-red-500/50"
+            onKeyDown={(e) => e.key === 'Enter' && onSubmit()}
+            aria-label="Write a comment"
+          />
+          <button
+            onClick={onSubmit}
+            className="bg-red-600 px-3 py-2 rounded-lg text-white text-xs font-bold touch-manipulation hover:bg-red-700 transition"
+            aria-label="Post comment"
+          >
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={onLogin}
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2.5 text-xs font-bold text-zinc-400 hover:text-red-400 hover:border-red-500/50 flex items-center justify-center gap-2 transition-all touch-manipulation"
+          aria-label="Login to comment"
+        >
+          <LogIn className="w-3.5 h-3.5" /> Login to comment
+        </button>
+      )}
+      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+        {visibleComments.map((c: any) => (
+          <div key={c.id} className="space-y-1.5 pb-3 border-b border-zinc-800/50">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-purple-500 rounded-full text-[10px] font-black flex items-center justify-center text-white">
+                {c.avatar}
+              </div>
+              <span className="text-xs font-bold text-zinc-200">{c.username}</span>
+              <span className="text-[9px] text-zinc-500">
+                {new Date(c.timestamp).toLocaleDateString()}
+              </span>
+            </div>
+            <p className="text-xs text-zinc-400 pl-8 break-words">{c.text}</p>
+          </div>
+        ))}
+        {comments.length === 0 && (
+          <p className="text-xs text-zinc-500 text-center py-4">No comments yet. Be the first!</p>
+        )}
+        {hasMore && (
+          <button
+            onClick={loadMore}
+            className="w-full text-center text-[10px] text-zinc-500 hover:text-amber-400 py-2 transition-colors"
+            aria-label="Load more comments"
+          >
+            Load more ({visibleCount}/{comments.length})
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---- Anime Info ----
+function AnimeInfo({ anime, episode, userRating, hoverRating, setHoverRating, onRate, activeTab, setActiveTab }: any) {
+  return (
+    <div className="max-h-[500px] overflow-y-auto pr-1 space-y-4 sm:space-y-6">
+      <div className="flex gap-4 sm:gap-6 border-b border-zinc-800 pb-2">
+        {['Overview', 'Details'].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`text-xs sm:text-sm font-black pb-2 relative whitespace-nowrap transition-colors touch-manipulation ${
+              activeTab === tab ? 'text-red-500' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+            aria-label={`Show ${tab}`}
+          >
+            {tab}
+            {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-600 rounded-full" />}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'Overview' && (
+        <div className="space-y-3 sm:space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
+            <div className="space-y-1 sm:space-y-2">
+              <h1 className="text-xl sm:text-2xl font-black text-white">{anime.title}</h1>
+              <div className="flex items-center gap-2 flex-wrap text-[10px] sm:text-xs text-zinc-400">
+                <span>{anime.year}</span><span>•</span><span>{anime.type}</span><span>•</span><span>Ep {episode?.number ?? '?'}</span>
+              </div>
+            </div>
+            <div className="flex flex-col items-start sm:items-end gap-1 sm:gap-2">
+              <div className="flex items-center gap-0.5">
+                {[1,2,3,4,5].map((s) => (
+                  <button
+                    key={s}
+                    onMouseEnter={() => setHoverRating(s * 2)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    onClick={() => onRate(s)}
+                    className="touch-manipulation"
+                    aria-label={`Rate ${s * 2} stars`}
+                  >
+                    <Star
+                      className={`w-4 h-4 sm:w-5 sm:h-5 ${
+                        (hoverRating || userRating) >= s * 2
+                          ? 'fill-amber-400 text-amber-400'
+                          : 'text-zinc-600'
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] sm:text-xs text-zinc-500">
+                {userRating > 0 ? `Your rating: ${userRating}/10` : 'Rate this anime'}
+              </span>
+            </div>
+          </div>
+          <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">{anime.description}</p>
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+            {anime.genre.split(',').map((g: string) => (
+              <span
+                key={g}
+                className="px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold bg-zinc-800/50 text-zinc-400"
+              >
+                {g.trim()}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'Details' && (
+        <div className="space-y-2 sm:space-y-3 text-xs text-zinc-400">
+          <div className="grid grid-cols-2 gap-2 text-zinc-500">
+            <div>Studio: <span className="text-zinc-300">{anime.studio || 'Unknown'}</span></div>
+            <div>Status: <span className="text-red-500">{anime.status || '?'}</span></div>
+            <div>Episodes: <span className="text-zinc-300">{anime.episodes}</span></div>
+            <div>Score: <span className="text-amber-400">★ {anime.score || '?'}</span></div>
+          </div>
+          <p className="text-xs">{anime.description}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Recommendations Row ----
+function RecommendationsRow({ recommendations, onSelect }: any) {
+  if (!recommendations || recommendations.length === 0) return null;
+  return (
+    <div className="space-y-3 mt-4">
+      <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">You May Also Like</h3>
+      <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+        {recommendations.map((rec: any) => (
+          <div
+            key={rec.id}
+            className="flex-shrink-0 w-[120px] sm:w-[140px] cursor-pointer group"
+            onClick={() => onSelect(rec.id)}
+          >
+            <div className="aspect-[3/4] bg-zinc-900 rounded-lg overflow-hidden mb-2">
+              <img
+                src={getSafeImage(rec.image)}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                alt={rec.title}
+                loading="lazy"
+              />
+            </div>
+            <h4 className="text-[10px] font-bold truncate text-zinc-200 group-hover:text-red-400">{rec.title}</h4>
+            <p className="text-[9px] text-zinc-500">{rec.type} • ★ {rec.score}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// VIDEO PLAYER COMPONENT
+// ============================================================
+function VideoPlayer({
+  anime,
+  episode,
+  currentServerUrl,
+  isNative,
+  isIframe,
+  isVidnest,
+  playerLoading,
+  playerError,
+  codecWarning,
+  isPlaying,
+  currentTime,
+  duration,
+  volume,
+  isMuted,
+  playbackRate,
+  controlsVisible,
+  shieldVisible,
+  iframeEnabled,
+  showBackButton,
+  showLoadingMsg,
+  showReportBtn,
+  reportSuccess,
+  reporting,
+  onBack,
+  togglePlay,
+  skipTime,
+  toggleMute,
+  changeVolume,
+  changePlaybackRate,
+  toggleFullscreen,
+  seekVideo,
+  handleVideoTap,
+  handleInteraction,
+  handleShieldTap,
+  reportBrokenLink,
+  videoRef,
+  progressRef,
+  playerContainerRef,
+  onMouseEnter,
+  onMouseLeave,
+}: any) {
+  return (
+    <div
+      ref={playerContainerRef}
+      className="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl group"
+      onMouseMove={handleInteraction}
+      onTouchStart={handleInteraction}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {/* Back button – auto‑hides after 3s, shows on hover */}
+      <button
+        onClick={onBack}
+        className={`absolute top-3 left-3 z-40 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation ${
+          showBackButton ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        } group-hover:opacity-100 group-hover:pointer-events-auto`}
+        aria-label="Go back"
+      >
+        <ArrowLeft className="w-5 h-5" />
+      </button>
+
+      {/* Loading Overlay */}
+      {playerLoading && (
+        <div className="absolute inset-0 z-30 bg-[#0a0a0f] flex flex-col items-center justify-center">
+          <div className="w-10 h-10 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-4" />
+          {showLoadingMsg && (
+            <p className="text-zinc-400 text-center text-xs px-4 max-w-md">
+              This video is hosted on an external server and may take up to 60 seconds to load.
+              If nothing happens, the link might be broken.
+            </p>
+          )}
+          {showReportBtn && !reportSuccess && (
+            <button
+              onClick={() => reportBrokenLink('Loading timeout')}
+              disabled={reporting}
+              className="mt-3 px-4 py-2 bg-red-600/20 border border-red-500/30 rounded-lg text-xs text-red-400 hover:bg-red-600/30 transition-colors disabled:opacity-50 flex items-center gap-2 touch-manipulation"
+              aria-label="Report broken link"
+            >
+              {reporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '⚠️'} Report
+            </button>
+          )}
+          {reportSuccess && (
+            <div className="mt-3 flex items-center gap-2 text-green-400 text-xs">
+              ✅ Thank you! We'll check this link.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Error overlay */}
+      {playerError && (
+        <div className="absolute inset-0 z-30 bg-black/90 flex flex-col items-center justify-center gap-3 p-4 text-center">
+          <AlertCircle className="w-12 h-12 text-red-500" />
+          <p className="text-sm text-white">{playerError}</p>
+          <div className="flex gap-2">
+            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-red-600 rounded-lg text-xs font-bold text-white hover:bg-red-700 touch-manipulation">Retry</button>
+            {!reportSuccess ? (
+              <button
+                onClick={() => reportBrokenLink(playerError)}
+                disabled={reporting}
+                className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs font-bold text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-2 touch-manipulation"
+              >
+                {reporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '⚠️'} Report
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 text-green-400 text-xs">✅ Reported!</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Codec warning */}
+      {codecWarning && !playerError && !playerLoading && (
+        <div className="absolute inset-0 z-30 bg-black/90 flex flex-col items-center justify-center gap-3 p-4 text-center">
+          <AlertCircle className="w-12 h-12 text-amber-400" />
+          <p className="text-sm text-white">Video codec not supported by this browser.</p>
+          <p className="text-xs text-zinc-400">Try Safari (macOS/iOS), Edge with HEVC extension, or re‑encode your streams to H.264.</p>
+        </div>
+      )}
+
+      {/* Iframe embed */}
+      {isIframe && currentServerUrl && !playerError && (
+        <>
+          {isVidnest && shieldVisible && (
+            <div
+              className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-pointer touch-manipulation"
+              onClick={handleShieldTap}
+              style={{ pointerEvents: 'auto', touchAction: 'none' }}
+            >
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl px-6 py-4 border border-white/20 shadow-2xl text-center select-none">
+                <Play className="w-12 h-12 text-white mx-auto mb-2" />
+                <p className="text-white text-sm font-bold">Tap to play</p>
+                <p className="text-white/50 text-[10px] mt-1">(Use the video controls to pause, seek, etc.)</p>
+              </div>
+            </div>
+          )}
+          <iframe
+            key={currentServerUrl}
+            src={formatEmbedUrl(currentServerUrl)}
+            className="absolute inset-0 w-full h-full"
+            allowFullScreen
+            allow="autoplay; encrypted-media; picture-in-picture"
+            title={anime.title}
+            onLoad={() => {}}
+            {...(() => {
+              const url = currentServerUrl.toLowerCase();
+              const needsNoSandbox = url.includes('vidnest.fun') || url.includes('megaplay.buzz') || url.includes('vaplayer.ru');
+              if (needsNoSandbox) {
+                return {
+                  style: {
+                    pointerEvents: (isVidnest && (shieldVisible || !iframeEnabled)) ? 'none' : 'auto',
+                  },
+                };
+              } else {
+                return {
+                  sandbox: "allow-scripts allow-same-origin allow-forms allow-presentation",
+                };
+              }
+            })()}
+          />
+        </>
+      )}
+
+      {/* Native video */}
+      {isNative && (
+        <video
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full object-contain bg-black"
+          playsInline
+          webkit-playsinline="true"
+          poster={anime.image}
+          onTimeUpdate={() => {}}
+          onLoadedMetadata={() => {}}
+          onWaiting={() => {}}
+          onPlaying={() => {}}
+          onPause={() => {}}
+          onEnded={() => {}}
+          onError={() => {}}
+          onCanPlay={() => {}}
+          onClick={handleVideoTap}
+          aria-label={`Video player for ${anime.title}`}
+        />
+      )}
+
+      {/* No server selected */}
+      {!currentServerUrl && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <img src={anime.image} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />
+          <div className="relative z-10 text-center">
+            <Play className="w-16 h-16 text-zinc-600 mx-auto mb-3" />
+            <p className="text-sm text-zinc-400">Select a server to start watching</p>
+          </div>
+        </div>
+      )}
+
+      {/* Big play button overlay (native) */}
+      {isNative && !playerLoading && !playerError && !isPlaying && currentServerUrl && (
+        <button
+          onClick={() => { handleInteraction(); togglePlay(); }}
+          className="absolute inset-0 z-20 flex items-center justify-center transition-opacity hover:opacity-80 focus:outline-none touch-manipulation"
+          aria-label="Play"
+        >
+          <div className="bg-white/20 backdrop-blur-sm rounded-full p-4 sm:p-5 md:p-8 shadow-2xl border border-white/30">
+            <Play className="w-10 h-10 sm:w-14 sm:h-14 md:w-20 md:h-20 text-white fill-white drop-shadow-lg" />
+          </div>
+        </button>
+      )}
+
+      {/* Bottom controls (native) */}
+      {isNative && currentServerUrl && !playerError && !codecWarning && (
+        <div
+          className={`absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-2 sm:p-3 pt-8 sm:pt-12 transition-opacity duration-300 ${
+            controlsVisible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          }`}
+          onClick={handleInteraction}
+          onMouseEnter={handleInteraction}
+        >
+          <div ref={progressRef} className="w-full h-2 sm:h-1.5 bg-zinc-600/60 rounded-full cursor-pointer mb-2 sm:mb-3 relative group/progress" onClick={seekVideo}>
+            <div className="absolute left-0 top-0 h-full bg-red-600 rounded-full" style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }} />
+            <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 sm:w-3.5 sm:h-3.5 bg-red-500 rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity" style={{ left: `calc(${duration > 0 ? (currentTime / duration) * 100 : 0}% - 8px)` }} />
+          </div>
+
+          <div className="flex items-center justify-between flex-wrap gap-1 sm:gap-2">
+            <div className="flex items-center gap-1 sm:gap-3">
+              <button onClick={() => { handleInteraction(); togglePlay(); }} className="text-white hover:text-red-400 p-1 touch-manipulation" aria-label={isPlaying ? 'Pause' : 'Play'}>
+                {isPlaying ? <Pause className="w-5 h-5 sm:w-5 sm:h-5 fill-current" /> : <Play className="w-5 h-5 sm:w-5 sm:h-5 fill-current ml-0.5" />}
+              </button>
+              <button onClick={() => { handleInteraction(); skipTime(-10); }} className="text-white/80 hover:text-red-400 text-xs font-bold flex items-center gap-0.5 touch-manipulation" aria-label="Rewind 10 seconds">
+                <RotateCcw className="w-4 h-4 inline" /> <span className="hidden xs:inline">10</span>
+              </button>
+              <button onClick={() => { handleInteraction(); skipTime(10); }} className="text-white/80 hover:text-red-400 text-xs font-bold flex items-center gap-0.5 touch-manipulation" aria-label="Forward 10 seconds">
+                <span className="hidden xs:inline">10</span> <RotateCw className="w-4 h-4 inline" />
+              </button>
+              <button onClick={() => { handleInteraction(); toggleMute(); }} className="text-white/80 hover:text-red-400 p-1 touch-manipulation" aria-label={isMuted || volume === 0 ? 'Unmute' : 'Mute'}>
+                {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" /> : <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={isMuted ? 0 : volume}
+                onChange={(e) => { handleInteraction(); changeVolume(e); }}
+                className="w-16 sm:w-20 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-red-500 [&::-webkit-slider-thumb]:rounded-full"
+                aria-label="Volume"
+              />
+              <span className="text-[10px] sm:text-xs text-zinc-400 font-mono hidden xs:inline">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2">
+              <select
+                value={playbackRate}
+                onChange={(e) => { handleInteraction(); changePlaybackRate(parseFloat(e.target.value)); }}
+                className="bg-zinc-800 border border-zinc-700 rounded-md px-1.5 sm:px-2 py-0.5 sm:py-1 text-[10px] sm:text-xs text-white touch-manipulation"
+                aria-label="Playback speed"
+              >
+                {[0.5, 0.75, 1, 1.25, 1.5, 2].map(r => <option key={r} value={r}>{r}x</option>)}
+              </select>
+              <button onClick={() => { handleInteraction(); toggleFullscreen(); }} className="text-white/80 hover:text-red-400 p-1 touch-manipulation" aria-label="Fullscreen">
+                <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatTime(seconds: number) {
+  if (!seconds || isNaN(seconds)) return '00:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// ============================================================
+// MAIN WATCH CONTENT
 // ============================================================
 function WatchContent() {
   const searchParams = useSearchParams();
@@ -203,18 +836,15 @@ function WatchContent() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [shieldVisible, setShieldVisible] = useState(true);
   const [iframeEnabled, setIframeEnabled] = useState(false);
-
-  // ---------- loading message & report ----------
   const [showLoadingMsg, setShowLoadingMsg] = useState(false);
   const [showReportBtn, setShowReportBtn] = useState(false);
   const [reportSuccess, setReportSuccess] = useState(false);
   const [reporting, setReporting] = useState(false);
-
-  // ---------- back button visibility ----------
+  const [episodeProgress, setEpisodeProgress] = useState<Record<number, number>>({});
   const [showBackButton, setShowBackButton] = useState(true);
-  const backButtonTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const backButtonTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const videoInitializedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -237,7 +867,40 @@ function WatchContent() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // ---- Timers for loading message and report button ----
+  // ---- Back button auto‑hide ----
+  const resetBackButtonTimeout = () => {
+    setShowBackButton(true);
+    if (backButtonTimeoutRef.current) clearTimeout(backButtonTimeoutRef.current);
+    backButtonTimeoutRef.current = setTimeout(() => {
+      setShowBackButton(false);
+    }, 3000);
+  };
+
+  useEffect(() => {
+    resetBackButtonTimeout();
+    return () => {
+      if (backButtonTimeoutRef.current) clearTimeout(backButtonTimeoutRef.current);
+    };
+  }, []);
+
+  const handleInteraction = () => {
+    resetBackButtonTimeout();
+    resetControlsTimeout();
+  };
+
+  const handlePlayerHover = () => {
+    setShowBackButton(true);
+    if (backButtonTimeoutRef.current) clearTimeout(backButtonTimeoutRef.current);
+  };
+
+  const handlePlayerLeave = () => {
+    if (backButtonTimeoutRef.current) clearTimeout(backButtonTimeoutRef.current);
+    backButtonTimeoutRef.current = setTimeout(() => {
+      setShowBackButton(false);
+    }, 3000);
+  };
+
+  // ---- Timers for loading message and report ----
   useEffect(() => {
     if (playerLoading) {
       setShowLoadingMsg(false);
@@ -249,13 +912,10 @@ function WatchContent() {
         clearTimeout(msgTimer);
         clearTimeout(reportTimer);
       };
-    } else {
-      setShowLoadingMsg(false);
-      setShowReportBtn(false);
     }
   }, [playerLoading]);
 
-  // ---- Report broken link ----
+  // ---- Report ----
   const reportBrokenLink = async (reason?: string) => {
     if (!anime || !episode || !currentServerUrl) return;
     setReporting(true);
@@ -268,7 +928,7 @@ function WatchContent() {
         serverName,
         url: currentServerUrl,
         userId: user?.id || null,
-        reason: reason || 'Loading timeout',
+        reason: reason || 'User reported',
         createdAt: serverTimestamp(),
       });
       setReportSuccess(true);
@@ -280,25 +940,16 @@ function WatchContent() {
     }
   };
 
-  // ================================================================
-  // COMPUTED PROPERTIES
-  // ================================================================
+  // ====== COMPUTED PROPERTIES ======
   const servers = useMemo(() => {
     if (!episode) return {};
     const lang = selectedLanguage;
     const episodeServers = episode.servers?.[lang] || {};
-    if (Object.keys(episodeServers).length === 0 && lang === 'ENG') {
-      return {
-        'Big Buck Bunny (MP4)': 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_1MB.mp4',
-        'Mux HLS Test': 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-      };
-    }
     return episodeServers;
   }, [selectedLanguage, episode]);
 
   const currentServerUrl = useMemo(() => servers[selectedServer] || '', [servers, selectedServer]);
 
-  // ---- UPDATED: Added 'vaplayer.ru' to embed domains ----
   const isIframe = useMemo(() => {
     const url = currentServerUrl;
     if (!url) return false;
@@ -307,8 +958,7 @@ function WatchContent() {
       'youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com',
       'drive.google.com', 'googleapis.com', 'ok.ru', 'streamtape.com',
       'mp4upload.com', 'vidcloud', 'gdrive', 'vidnest.fun', 'nxsha.app',
-      'megaplay.buzz',
-      'vaplayer.ru'   // Added for VidAPI
+      'megaplay.buzz', 'vaplayer.ru'
     ];
     return embedDomains.some(domain => t.includes(domain));
   }, [currentServerUrl]);
@@ -325,7 +975,7 @@ function WatchContent() {
     return currentServerUrl.toLowerCase().includes('vidnest.fun');
   }, [currentServerUrl]);
 
-  // ---- AUTO‑HIDE CONTROLS (only for native) ----
+  // ---- Controls timeout (depends on isNative) ----
   const resetControlsTimeout = () => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     if (isMobile && isNative && !playerLoading && !playerError && isPlaying) {
@@ -336,39 +986,9 @@ function WatchContent() {
     }
   };
 
-  // ---- Back button timeout ----
-  const resetBackButtonTimeout = () => {
-    setShowBackButton(true);
-    if (backButtonTimeoutRef.current) clearTimeout(backButtonTimeoutRef.current);
-    backButtonTimeoutRef.current = setTimeout(() => {
-      setShowBackButton(false);
-    }, 3000);
-  };
+  useEffect(() => { resetControlsTimeout(); return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); }; }, [isMobile, isNative, playerLoading, playerError, isPlaying]);
 
-  // ---- Combined interaction handler ----
-  const handleInteraction = () => {
-    resetControlsTimeout();
-    resetBackButtonTimeout();
-  };
-
-  // ---- Initial back button hide after 3s ----
-  useEffect(() => {
-    resetBackButtonTimeout();
-    return () => {
-      if (backButtonTimeoutRef.current) clearTimeout(backButtonTimeoutRef.current);
-    };
-  }, []);
-
-  useEffect(() => { 
-    resetControlsTimeout(); 
-    return () => { 
-      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); 
-    }; 
-  }, [isMobile, isNative, playerLoading, playerError, isPlaying]);
-
-  const handleVideoTap = () => { handleInteraction(); togglePlay(); };
-
-  // ---- Video toggle (native) ----
+  // ---- Video controls ----
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -376,65 +996,52 @@ function WatchContent() {
       setPlayerLoading(true);
       video.load();
       const playAttempt = () => {
-        video.play().then(() => { setPlayerLoading(false); setIsPlaying(true); }).catch((err) => {
-          console.error('Play failed:', err);
-          setPlayerLoading(false);
-          setPlayerError('Unable to play. Please try another server.');
-        });
+        video.play().then(() => { setPlayerLoading(false); setIsPlaying(true); }).catch(() => { setPlayerLoading(false); setPlayerError('Unable to play. Please try another server.'); });
         video.removeEventListener('canplay', playAttempt);
       };
       video.addEventListener('canplay', playAttempt);
       return;
     }
-    if (isPlaying) {
-      video.pause();
-    } else {
-      video.play().then(() => setIsPlaying(true)).catch((err) => {
-        console.error('Play failed:', err);
-        setIsPlaying(false);
-      });
-    }
+    if (isPlaying) video.pause();
+    else video.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
   }, [isPlaying]);
 
-  // ---- Video event handlers (native) ----
   const seekVideo = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current || !videoRef.current) return;
     const rect = progressRef.current.getBoundingClientRect();
     const p = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
     videoRef.current.currentTime = p * (videoRef.current.duration || 0);
   };
+
   const skipTime = (seconds: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = Math.max(0, Math.min(videoRef.current.duration || Infinity, videoRef.current.currentTime + seconds));
     }
   };
+
   const toggleMute = () => {
     if (videoRef.current) {
       videoRef.current.muted = !videoRef.current.muted;
       setIsMuted(videoRef.current.muted);
     }
   };
+
   const changeVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = parseFloat(e.target.value);
     setVolume(v);
     if (videoRef.current) { videoRef.current.volume = v; videoRef.current.muted = v === 0; setIsMuted(v === 0); }
   };
+
   const changePlaybackRate = (rate: number) => { setPlaybackRate(rate); if (videoRef.current) videoRef.current.playbackRate = rate; };
   const toggleFullscreen = () => {
     if (!playerContainerRef.current) return;
     if (document.fullscreenElement) document.exitFullscreen();
     else playerContainerRef.current.requestFullscreen();
   };
-  const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return '00:00';
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  };
 
-  // ================================================================
-  // INSTANT CACHE LOAD + BACKGROUND REFRESH
-  // ================================================================
+  const handleVideoTap = () => { handleInteraction(); togglePlay(); };
+
+  // ---- Shared cache load ----
   useLayoutEffect(() => {
     if (!animeId || animeId === '0') {
       setLoading(false);
@@ -443,27 +1050,44 @@ function WatchContent() {
       return;
     }
 
-    const cached = getCachedWatchData(animeId);
-    if (cached) {
-      setAnime(cached.anime);
-      setAllEpisodes(cached.allEpisodes);
-      setRecommendations(cached.recommendations);
-      setAllEpisodesData(cached.allEpisodesData || []);
+    // Check shared home cache first
+    const cachedHome = getCachedHomeData();
+    if (cachedHome && cachedHome.animeList && cachedHome.episodes) {
+      const foundAnime = cachedHome.animeList.find((a: any) => a.id === animeId);
+      if (foundAnime) {
+        const eps = cachedHome.episodes
+          .filter((e: any) => e.anime_id === animeId)
+          .sort((a: any, b: any) => a.number - b.number)
+          .map((e: any) => ({ ...e }));
+        setAnime(foundAnime);
+        setAllEpisodes(eps);
+        setAllEpisodesData(eps);
+        let selectedEp = null;
+        if (epNumber) selectedEp = eps.find((e: any) => e.number === epNumber);
+        if (!selectedEp && eps.length > 0) selectedEp = eps[0];
+        setEpisode(selectedEp);
+        setLoading(false);
+        setFetchError(null);
+        refreshData();
+        return;
+      }
+    }
 
+    // Fallback to watch cache
+    const cachedWatch = getCachedWatchData(animeId);
+    if (cachedWatch) {
+      setAnime(cachedWatch.anime);
+      setAllEpisodes(cachedWatch.allEpisodes);
+      setRecommendations(cachedWatch.recommendations);
+      setAllEpisodesData(cachedWatch.allEpisodesData || []);
       let selectedEp = null;
-      if (epNumber) {
-        selectedEp = cached.allEpisodes.find((e: Episode) => e.number === epNumber);
-      }
-      if (!selectedEp && cached.allEpisodes.length > 0) {
-        selectedEp = cached.allEpisodes[0];
-      }
+      if (epNumber) selectedEp = cachedWatch.allEpisodes.find((e: Episode) => e.number === epNumber);
+      if (!selectedEp && cachedWatch.allEpisodes.length > 0) selectedEp = cachedWatch.allEpisodes[0];
       setEpisode(selectedEp);
-
       if (user) {
-        setIsBookmarked(cached.bookmarkStatus);
-        setUserRating(cached.userRating);
+        setIsBookmarked(cachedWatch.bookmarkStatus);
+        setUserRating(cachedWatch.userRating);
       }
-
       setLoading(false);
       setFetchError(null);
       refreshData();
@@ -475,30 +1099,45 @@ function WatchContent() {
     if (publicComments) setComments(publicComments);
   }, [animeId, epNumber, user]);
 
-  // ---- Dedicated rating fetch ----
+  // ---- Fetch episode progress ----
+  useEffect(() => {
+    if (!user || !animeId) return;
+    const fetchProgress = async () => {
+      const { data } = await supabase
+        .from('watch_history')
+        .select('last_episode, progress')
+        .eq('user_id', user.id)
+        .eq('anime_id', animeId)
+        .single();
+      if (data) {
+        const prog: Record<number, number> = {};
+        for (let i = 1; i <= data.last_episode; i++) {
+          prog[i] = i === data.last_episode ? (data.progress || 0) : 100;
+        }
+        setEpisodeProgress(prog);
+      }
+    };
+    fetchProgress();
+  }, [user, animeId]);
+
+  // ---- Rating fetch ----
   useEffect(() => {
     if (!user || !animeId || animeId === '0') return;
     const fetchRating = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('ratings')
         .select('rating')
         .eq('user_id', user.id)
         .eq('anime_id', animeId)
         .single();
       if (data) setUserRating(data.rating);
-      else setUserRating(0);
     };
     fetchRating();
   }, [animeId, user]);
 
-  // ================================================================
-  // REFRESH DATA – USING CloudflareAPI
-  // ================================================================
+  // ---- Refresh data ----
   const refreshData = async () => {
-    if (!animeId || animeId === '0') {
-      setLoading(false);
-      return;
-    }
+    if (!animeId || animeId === '0') { setLoading(false); return; }
     if (isRefreshing.current) return;
     isRefreshing.current = true;
 
@@ -511,16 +1150,10 @@ function WatchContent() {
     }, 15000);
 
     try {
-      const fetchPromise = Promise.all([
+      const [animeRes, episodesRes] = await Promise.all([
         CloudflareAPI.getAnime(),
         CloudflareAPI.getEpisodes(),
       ]);
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timed out')), 15000)
-      );
-
-      const [animeRes, episodesRes] = await Promise.race([fetchPromise, timeoutPromise]) as any[];
 
       clearTimeout(timeoutId);
 
@@ -563,10 +1196,7 @@ function WatchContent() {
         episodes: foundAnime.episodes,
       };
 
-      setAnime(prev => {
-        if (JSON.stringify(prev) === JSON.stringify(animeData)) return prev;
-        return animeData;
-      });
+      setAnime(animeData);
 
       const eps: Episode[] = allEpisodesRaw
         .filter((e: RawEpisode) => e.anime_id === animeId)
@@ -580,18 +1210,11 @@ function WatchContent() {
           servers: e.servers,
         }));
 
-      setAllEpisodes(prev => {
-        if (JSON.stringify(prev) === JSON.stringify(eps)) return prev;
-        return eps;
-      });
+      setAllEpisodes(eps);
 
       let selectedEp: Episode | null = null;
-      if (epNumber) {
-        selectedEp = eps.find((e: Episode) => e.number === epNumber) || null;
-      }
-      if (!selectedEp && eps.length > 0) {
-        selectedEp = eps[0];
-      }
+      if (epNumber) selectedEp = eps.find((e: Episode) => e.number === epNumber) || null;
+      if (!selectedEp && eps.length > 0) selectedEp = eps[0];
       setEpisode(selectedEp);
 
       let recs: Anime[] = [];
@@ -652,14 +1275,8 @@ function WatchContent() {
         }
       } catch {}
 
-      saveWatchCache(animeId, {
-        anime: animeData,
-        allEpisodes: eps,
-        allEpisodesData: allEpisodesRaw,
-        recommendations: recs,
-        bookmarkStatus,
-        userRating: userRating,
-      });
+      saveWatchCache(animeId, { anime: animeData, allEpisodes: eps, allEpisodesData: allEpisodesRaw, recommendations: recs, bookmarkStatus, userRating });
+      saveToHomeCache(allAnime, allEpisodesRaw);
 
       setLoading(false);
       setFetchError(null);
@@ -673,27 +1290,11 @@ function WatchContent() {
     }
   };
 
-  useEffect(() => {
-    if (!animeId || animeId === '0') return;
-    const cached = getCachedWatchData(animeId);
-    if (!cached) {
-      refreshData();
-    }
-  }, [animeId]);
-
-  useEffect(() => {
-    if (anime) {
-      refreshData();
-    }
-  }, [selectedLanguage]);
-
-  // ---- Set effective language and server (with per‑episode memory) ----
+  // ---- Language / Server selection ----
   useEffect(() => {
     if (!episode) return;
-
     const availableLanguages = Object.keys(episode.servers || {});
     let effectiveLang = selectedLanguage;
-
     if (availableLanguages.length === 0) {
       effectiveLang = 'ENG';
     } else {
@@ -701,52 +1302,40 @@ function WatchContent() {
         effectiveLang = availableLanguages[0];
       }
     }
-
-    if (effectiveLang !== selectedLanguage) {
-      setSelectedLanguage(effectiveLang);
-    }
-
+    if (effectiveLang !== selectedLanguage) setSelectedLanguage(effectiveLang);
     const langServers = episode.servers?.[effectiveLang] || {};
     const serverKeys = Object.keys(langServers);
     if (serverKeys.length > 0) {
-      // Check saved selection for this episode
       const saved = serverSelections[episode.id];
-      if (saved && serverKeys.includes(saved)) {
-        setSelectedServer(saved);
-      } else {
-        setSelectedServer(serverKeys[0]);
-      }
+      if (saved && serverKeys.includes(saved)) setSelectedServer(saved);
+      else setSelectedServer(serverKeys[0]);
     }
   }, [episode, selectedLanguage, setSelectedLanguage, serverSelections]);
 
-  const handleServerChange = (server: string) => {
-    if (!episode) return;
-    setSelectedServer(server);
-    setServerSelections(prev => ({ ...prev, [episode.id]: server }));
-  };
+  useEffect(() => {
+    if (anime) refreshData();
+  }, [selectedLanguage]);
 
-  const handleBack = () => router.back();
+  // ---- History reset ----
+  useEffect(() => {
+    hasSavedHistory.current = false;
+  }, [episode?.id]);
 
+  // ---- Episode switching ----
   const handleSelectEpisode = (ep: Episode) => {
     setPlayerLoading(false);
     setPlayerError('');
     setCurrentTime(0);
     setDuration(0);
     videoInitializedRef.current = false;
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     setShieldVisible(true);
     setIframeEnabled(false);
     router.push(`/watch?anime=${anime?.id}&ep=${ep.number}`, { scroll: false });
   };
 
   const handleRate = async (star: number) => {
-    if (!user) {
-      alert('Please login to rate!');
-      return;
-    }
+    if (!user) { alert('Please login to rate!'); return; }
     const rating = star * 2;
     setUserRating(rating);
     if (anime) {
@@ -760,10 +1349,7 @@ function WatchContent() {
   };
 
   const handleSubmitComment = async () => {
-    if (!user) {
-      router.push('/profile');
-      return;
-    }
+    if (!user) { router.push('/profile'); return; }
     if (!newComment.trim() || !anime) return;
     const commentText = newComment.trim();
     let commentId = Date.now();
@@ -831,75 +1417,25 @@ function WatchContent() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ---- Native video event handlers ----
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
-      setDuration(videoRef.current.duration || 0);
-    }
+  const handleServerChange = (server: string) => {
+    if (!episode) return;
+    setSelectedServer(server);
+    setServerSelections(prev => ({ ...prev, [episode.id]: server }));
   };
 
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) setDuration(videoRef.current.duration || 0);
-    if (loadingTimeoutRef.current) {
-      clearTimeout(loadingTimeoutRef.current);
-      loadingTimeoutRef.current = null;
-    }
-    setPlayerLoading(false);
-    videoInitializedRef.current = true;
-  };
+  const handleBack = () => router.back();
 
-  const handlePlaying = () => {
-    setPlayerLoading(false);
-    setIsPlaying(true);
-    if (loadingTimeoutRef.current) {
-      clearTimeout(loadingTimeoutRef.current);
-      loadingTimeoutRef.current = null;
-    }
-    handlePlayStart();
-  };
-
-  const handlePause = () => setIsPlaying(false);
-
-  const handleVideoEnded = () => {
-    setIsPlaying(false);
-    if (anime && episode) {
-      const nextEp = allEpisodes.find(e => e.number > episode.number);
-      if (nextEp) handleSelectEpisode(nextEp);
-    }
-  };
-
-  const handleWaiting = () => {
-    setPlayerLoading(true);
-  };
-
-  const handleCanPlay = () => {
-    setPlayerLoading(false);
-    if (loadingTimeoutRef.current) {
-      clearTimeout(loadingTimeoutRef.current);
-      loadingTimeoutRef.current = null;
-    }
-    videoInitializedRef.current = true;
-  };
-
-  // ========================================================================
-  // HISTORY & STATUS
-  // ========================================================================
+  // ---- History saving ----
   const saveHistoryAndStatus = async (ep: Episode) => {
-    if (!user || !anime) return;
-    if (hasSavedHistory.current) return;
+    if (!user || !anime || hasSavedHistory.current) return;
     hasSavedHistory.current = true;
 
-    const { data: existingHistory, error: fetchError } = await supabase
+    const { data: existingHistory } = await supabase
       .from('watch_history')
       .select('last_episode')
       .eq('user_id', user.id)
       .eq('anime_id', anime.id)
       .maybeSingle();
-
-    if (fetchError) {
-      console.error('Error fetching watch history:', fetchError);
-    }
 
     const isNewEpisode = !existingHistory || ep.number > existingHistory.last_episode;
 
@@ -939,89 +1475,72 @@ function WatchContent() {
       status: newStatus,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,anime_id' });
-
-    if (typeof window !== 'undefined') {
-      const myListCacheKey = `myListCache_${user.id}`;
-      const cached = localStorage.getItem(myListCacheKey);
-      let listData = cached
-        ? JSON.parse(cached)
-        : { animeList: [], watchlist: [], statuses: {} };
-
-      listData.statuses = {
-        ...(listData.statuses || {}),
-        [anime.id]: newStatus,
-      };
-
-      if (isBookmarked && !listData.watchlist.some((w: any) => w.id === anime.id)) {
-        listData.watchlist.push({
-          id: anime.id,
-          title: anime.title,
-          image: anime.image,
-          type: anime.type,
-        });
-      }
-
-      localStorage.setItem(myListCacheKey, JSON.stringify(listData));
-    }
-
-    if (typeof window !== 'undefined') {
-      const cwKey = `homeCW_${user.id}`;
-      const cached = localStorage.getItem(cwKey);
-      let arr = cached ? JSON.parse(cached) : [];
-      arr = arr.filter((w: any) => w.anime_id !== anime.id);
-      arr.push({
-        anime_id: anime.id,
-        last_episode: ep.number,
-        updated_at: new Date().toISOString(),
-        progress: 0,
-      });
-      localStorage.setItem(cwKey, JSON.stringify(arr));
-    }
   };
 
   useEffect(() => {
-    if (episode && anime) {
-      hasSavedHistory.current = false;
-      saveHistoryAndStatus(episode);
-    }
+    if (episode && anime) saveHistoryAndStatus(episode);
   }, [episode?.id, anime?.id]);
 
-  const handlePlayStart = () => {
-    if (user && anime && episode) {
-      hasSavedHistory.current = false;
-      saveHistoryAndStatus(episode);
+  // ---- Video event handlers (native) ----
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime);
+      setDuration(videoRef.current.duration || 0);
     }
   };
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-      if (e.code === 'KeyF') { e.preventDefault(); toggleFullscreen(); }
-      if (e.code === 'KeyM') { e.preventDefault(); toggleMute(); }
-      if (e.code === 'ArrowLeft') { e.preventDefault(); skipTime(-10); }
-      if (e.code === 'ArrowRight') { e.preventDefault(); skipTime(10); }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [togglePlay]);
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) setDuration(videoRef.current.duration || 0);
+    setPlayerLoading(false);
+    videoInitializedRef.current = true;
+  };
 
-  // ================================================================
-  // PLAYER SOURCE MANAGEMENT (native only)
-  // ================================================================
+  const handlePlaying = () => {
+    setPlayerLoading(false);
+    setIsPlaying(true);
+    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+  };
+
+  const handlePause = () => setIsPlaying(false);
+  const handleVideoEnded = () => {
+    setIsPlaying(false);
+    if (anime && episode) {
+      const nextEp = allEpisodes.find(e => e.number > episode.number);
+      if (nextEp) handleSelectEpisode(nextEp);
+    }
+  };
+  const handleWaiting = () => setPlayerLoading(true);
+  const handleCanPlay = () => { setPlayerLoading(false); videoInitializedRef.current = true; };
+  const handleVideoError = (e: any) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const error = video.error;
+    if (error) {
+      console.error('Video error:', error);
+      if (error.code === 4 || error.code === 2) {
+        if (retryCountRef.current < maxRetries) {
+          retryCountRef.current++;
+          setPlayerError(`CORS or network error – retrying... (${retryCountRef.current}/${maxRetries})`);
+          const proxied = getProxiedUrl(video.src);
+          video.src = proxied;
+          video.load();
+        } else {
+          setPlayerError('Unable to load video. Please try another server.');
+          setPlayerLoading(false);
+        }
+      } else {
+        setPlayerError(`Video error (code ${error.code}). Try another server.`);
+        setPlayerLoading(false);
+      }
+    }
+  };
+
+  // ---- Video source management ----
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !currentServerUrl || !isNative) return;
 
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
-    if (loadingTimeoutRef.current) {
-      clearTimeout(loadingTimeoutRef.current);
-      loadingTimeoutRef.current = null;
-    }
-
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     setPlayerLoading(true);
     setPlayerError('');
     setCodecWarning(false);
@@ -1037,7 +1556,6 @@ function WatchContent() {
       video.load();
       video.src = src;
       video.load();
-
       loadingTimeoutRef.current = setTimeout(() => {
         if (!videoInitializedRef.current) {
           setPlayerLoading(false);
@@ -1045,18 +1563,8 @@ function WatchContent() {
         }
         loadingTimeoutRef.current = null;
       }, 30000);
-
       video.muted = true;
-      video.play()
-        .then(() => {
-          if (!isMuted) {
-            video.muted = false;
-          }
-        })
-        .catch((err) => {
-          console.log('Autoplay prevented:', err);
-          setPlayerLoading(false);
-        });
+      video.play().catch(() => {});
     };
 
     if (/\.m3u8($|\?)/i.test(proxiedUrl) || proxiedUrl.includes('m3u8')) {
@@ -1072,16 +1580,13 @@ function WatchContent() {
             xhr.setRequestHeader('Referer', window.location.origin);
           }
         });
-
         hls.loadSource(proxiedUrl);
         hls.attachMedia(video);
-
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           setPlayerLoading(false);
           videoInitializedRef.current = true;
           video.play().catch(() => {});
         });
-
         hls.on(Hls.Events.ERROR, (event, data) => {
           if (data.fatal) {
             if (retryCountRef.current < maxRetries) {
@@ -1089,15 +1594,11 @@ function WatchContent() {
               setPlayerError(`Network error, retrying... (${retryCountRef.current}/${maxRetries})`);
               hls.destroy();
               hlsRef.current = null;
-              const retryUrl = getProxiedUrl(url);
-              loadVideo(retryUrl);
+              loadVideo(getProxiedUrl(url));
             } else {
               let msg = 'An error occurred while loading the video.';
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                msg = 'Network error. Try another server or check your connection.';
-              } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                msg = 'Media error. Try another server.';
-              }
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) msg = 'Network error. Try another server.';
+              else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) msg = 'Media error. Try another server.';
               setPlayerError(msg);
               setPlayerLoading(false);
               hls.destroy();
@@ -1105,7 +1606,6 @@ function WatchContent() {
             }
           }
         });
-
         hlsRef.current = hls;
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         loadVideo(proxiedUrl);
@@ -1118,101 +1618,34 @@ function WatchContent() {
     }
 
     return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-        loadingTimeoutRef.current = null;
-      }
+      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
       video.pause();
       video.removeAttribute('src');
       video.load();
     };
   }, [currentServerUrl, isNative]);
 
-  const handleVideoError = (e: any) => {
-    const video = videoRef.current;
-    if (!video) return;
-    const error = video.error;
-    if (error) {
-      console.error('Video error:', error);
-      if (error.code === 4 || error.code === 2) {
-        const currentSrc = video.src;
-        if (retryCountRef.current < maxRetries) {
-          retryCountRef.current++;
-          setPlayerError(`CORS or network error – retrying... (${retryCountRef.current}/${maxRetries})`);
-          const proxied = getProxiedUrl(currentSrc);
-          video.src = proxied;
-          video.load();
-        } else {
-          setPlayerError('Unable to load video. Please try another server.');
-          setPlayerLoading(false);
-        }
-      } else {
-        setPlayerError(`Video error (code ${error.code}). Try another server.`);
-        setPlayerLoading(false);
-      }
-    }
-  };
-
-  // ================================================================
-  // 🆕 RESET IFRAME STATE ON SERVER CHANGE
-  // ================================================================
-  useEffect(() => {
-    if (!isIframe || !currentServerUrl) return;
-
-    setPlayerLoading(true);
-    setPlayerError('');
-
-    if (iframeLoadingTimeoutRef.current) {
-      clearTimeout(iframeLoadingTimeoutRef.current);
-      iframeLoadingTimeoutRef.current = null;
-    }
-
-    iframeLoadingTimeoutRef.current = setTimeout(() => {
-      setPlayerLoading(false);
-      iframeLoadingTimeoutRef.current = null;
-    }, 10000);
-
-    return () => {
-      if (iframeLoadingTimeoutRef.current) {
-        clearTimeout(iframeLoadingTimeoutRef.current);
-        iframeLoadingTimeoutRef.current = null;
-      }
-    };
-  }, [currentServerUrl, isIframe]);
-
-  // ================================================================
-  // VIDNEST SHIELD HANDLER (only for vidnest)
-  // ================================================================
+  // ---- Shield handler ----
   const handleShieldTap = () => {
     setShieldVisible(false);
     if (shieldTimeoutRef.current) clearTimeout(shieldTimeoutRef.current);
-    shieldTimeoutRef.current = setTimeout(() => {
-      setIframeEnabled(true);
-    }, 500);
+    shieldTimeoutRef.current = setTimeout(() => setIframeEnabled(true), 500);
   };
 
-  // ================================================================
-  // 🆕 AD SCRIPT INJECTION (only once per page load)
-  // ================================================================
+  // ---- Ad script ----
   useEffect(() => {
     if (typeof window !== 'undefined' && !(window as any).__adLoaded) {
       (window as any).__adLoaded = true;
       const script = document.createElement('script');
-      script.src =
-        'https://ruffianattorneymargarine.com/22/f4/4b/22f44b1145190c5ab81771fa2f1f47da.js';
+      script.src = 'https://ruffianattorneymargarine.com/22/f4/4b/22f44b1145190c5ab81771fa2f1f47da.js';
       script.async = true;
       script.defer = true;
       document.body.appendChild(script);
     }
   }, []);
 
-  // ================================================================
-  // RENDER
-  // ================================================================
+  // ---- Render ----
   if (loading) {
     return (
       <div className="min-h-screen bg-[#040406] flex items-center justify-center">
@@ -1227,19 +1660,8 @@ function WatchContent() {
         <AlertCircle className="w-16 h-16 text-red-500" />
         <h1 className="text-xl font-bold text-white">Something went wrong</h1>
         <p className="text-sm text-zinc-400 max-w-md">{fetchError}</p>
-        <button
-          onClick={() => {
-            setFetchError(null);
-            setLoading(true);
-            refreshData();
-          }}
-          className="px-6 py-2 bg-red-600 rounded-lg text-sm font-bold text-white hover:bg-red-700 transition"
-        >
-          Retry
-        </button>
-        <button onClick={handleBack} className="text-zinc-500 hover:text-white text-sm">
-          Go back
-        </button>
+        <button onClick={() => { setFetchError(null); setLoading(true); refreshData(); }} className="px-6 py-2 bg-red-600 rounded-lg text-sm font-bold text-white hover:bg-red-700 transition">Retry</button>
+        <button onClick={handleBack} className="text-zinc-500 hover:text-white text-sm">Go back</button>
       </div>
     );
   }
@@ -1254,477 +1676,112 @@ function WatchContent() {
     );
   }
 
-  const showPlayOverlay = currentServerUrl && !playerLoading && !playerError && !isPlaying;
-
   const availableLanguages = episode ? Object.keys(episode.servers || {}) : [];
   const currentServerKeys = episode && selectedLanguage ? Object.keys(episode.servers?.[selectedLanguage] || {}) : [];
 
   return (
     <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans flex flex-col">
       <main className="flex-1 max-w-[1400px] w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
-        {/* ===== Player – full width (no max-width constraints) ===== */}
-        <div
-          ref={playerContainerRef}
-          className="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl"
-          onMouseMove={handleInteraction}
-          onTouchStart={handleInteraction}
-        >
-          {/* Floating Back Button – only visible when showBackButton is true */}
-          {showBackButton && (
-            <button
-              onClick={handleBack}
-              className="absolute top-3 left-3 z-40 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all touch-manipulation"
-              aria-label="Go back"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
+        {/* Video Player */}
+        <VideoPlayer
+          anime={anime}
+          episode={episode}
+          currentServerUrl={currentServerUrl}
+          isNative={isNative}
+          isIframe={isIframe}
+          isVidnest={isVidnest}
+          playerLoading={playerLoading}
+          playerError={playerError}
+          codecWarning={codecWarning}
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          duration={duration}
+          volume={volume}
+          isMuted={isMuted}
+          playbackRate={playbackRate}
+          controlsVisible={controlsVisible}
+          shieldVisible={shieldVisible}
+          iframeEnabled={iframeEnabled}
+          showBackButton={showBackButton}
+          showLoadingMsg={showLoadingMsg}
+          showReportBtn={showReportBtn}
+          reportSuccess={reportSuccess}
+          reporting={reporting}
+          onBack={handleBack}
+          togglePlay={togglePlay}
+          skipTime={skipTime}
+          toggleMute={toggleMute}
+          changeVolume={changeVolume}
+          changePlaybackRate={changePlaybackRate}
+          toggleFullscreen={toggleFullscreen}
+          seekVideo={seekVideo}
+          handleVideoTap={handleVideoTap}
+          handleInteraction={handleInteraction}
+          handleShieldTap={handleShieldTap}
+          reportBrokenLink={reportBrokenLink}
+          videoRef={videoRef}
+          progressRef={progressRef}
+          playerContainerRef={playerContainerRef}
+          onMouseEnter={handlePlayerHover}
+          onMouseLeave={handlePlayerLeave}
+        />
 
-          {/* Loading Overlay */}
-          {playerLoading && (
-            <div className="absolute inset-0 z-30 bg-[#0a0a0f] flex flex-col items-center justify-center">
-              <div className="w-10 h-10 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-4" />
-              {showLoadingMsg && (
-                <p className="text-zinc-400 text-center text-xs px-4 max-w-md">
-                  This video is hosted on an external server and may take up to 60 seconds to load.
-                  If nothing happens, the link might be broken.
-                </p>
-              )}
-              {showReportBtn && !reportSuccess && (
-                <button
-                  onClick={() => reportBrokenLink('Loading timeout')}
-                  disabled={reporting}
-                  className="mt-3 px-4 py-2 bg-red-600/20 border border-red-500/30 rounded-lg text-xs text-red-400 hover:bg-red-600/30 transition-colors disabled:opacity-50 flex items-center gap-2 touch-manipulation"
-                >
-                  {reporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '⚠️'} Report broken link
-                </button>
-              )}
-              {reportSuccess && (
-                <div className="mt-3 flex items-center gap-2 text-green-400 text-xs">
-                  ✅ Thank you! We'll check this link.
-                </div>
-              )}
-            </div>
-          )}
+        {/* Action Bar */}
+        <ActionBar
+          anime={anime}
+          episode={episode}
+          isBookmarked={isBookmarked}
+          onToggleBookmark={toggleBookmark}
+          onShare={handleShare}
+          onReport={() => reportBrokenLink('User reported')}
+          reporting={reporting}
+          reportSuccess={reportSuccess}
+          availableLanguages={availableLanguages}
+          selectedLanguage={selectedLanguage}
+          onLanguageChange={setSelectedLanguage}
+          currentServerKeys={currentServerKeys}
+          selectedServer={selectedServer}
+          onServerChange={handleServerChange}
+        />
 
-          {/* Error overlay */}
-          {playerError && (
-            <div className="absolute inset-0 z-30 bg-black/90 flex flex-col items-center justify-center gap-3 p-4 text-center">
-              <AlertCircle className="w-12 h-12 text-red-500" />
-              <p className="text-sm text-white">{playerError}</p>
-              <div className="flex gap-2">
-                <button onClick={() => { setPlayerError(''); setPlayerLoading(false); }} className="px-4 py-2 bg-red-600 rounded-lg text-xs font-bold text-white hover:bg-red-700 touch-manipulation">Retry</button>
-                {!reportSuccess ? (
-                  <button
-                    onClick={() => reportBrokenLink(playerError)}
-                    disabled={reporting}
-                    className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs font-bold text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-2 touch-manipulation"
-                  >
-                    {reporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '⚠️'} Report
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2 text-green-400 text-xs">✅ Reported!</div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Codec warning */}
-          {codecWarning && !playerError && !playerLoading && (
-            <div className="absolute inset-0 z-30 bg-black/90 flex flex-col items-center justify-center gap-3 p-4 text-center">
-              <AlertCircle className="w-12 h-12 text-amber-400" />
-              <p className="text-sm text-white">Video codec not supported by this browser.</p>
-              <p className="text-xs text-zinc-400">Try Safari (macOS/iOS), Edge with HEVC extension, or re‑encode your streams to H.264.</p>
-            </div>
-          )}
-
-          {/* Iframe embed – NO sandbox for VidAPI, Vidnest, MegaPlay */}
-          {isIframe && currentServerUrl && !playerError && (
-            <>
-              {/* Show shield only for Vidnest (and only when shieldVisible) */}
-              {isVidnest && shieldVisible && (
-                <div
-                  className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-pointer touch-manipulation"
-                  onClick={handleShieldTap}
-                  style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                >
-                  <div className="bg-white/10 backdrop-blur-md rounded-2xl px-6 py-4 border border-white/20 shadow-2xl text-center select-none">
-                    <Play className="w-12 h-12 text-white mx-auto mb-2" />
-                    <p className="text-white text-sm font-bold">Tap to play</p>
-                    <p className="text-white/50 text-[10px] mt-1">(Use the video controls to pause, seek, etc.)</p>
-                  </div>
-                </div>
-              )}
-
-              <iframe
-                key={currentServerUrl} // Force re‑mount on URL change
-                ref={iframeRef}
-                src={formatEmbedUrl(currentServerUrl)}
-                className="absolute inset-0 w-full h-full"
-                allowFullScreen
-                allow="autoplay; encrypted-media; picture-in-picture"
-                title={anime.title}
-                onLoad={() => setPlayerLoading(false)}
-                {...(() => {
-                  const url = currentServerUrl.toLowerCase();
-                  const needsNoSandbox = url.includes('vidnest.fun') || url.includes('megaplay.buzz') || url.includes('vaplayer.ru');
-                  if (needsNoSandbox) {
-                    return {
-                      style: {
-                        pointerEvents: (isVidnest && (shieldVisible || !iframeEnabled)) ? 'none' : 'auto',
-                      },
-                    };
-                  } else {
-                    return {
-                      sandbox: "allow-scripts allow-same-origin allow-forms allow-presentation",
-                    };
-                  }
-                })()}
-              />
-            </>
-          )}
-
-          {/* Native video */}
-          {isNative && (
-            <video
-              ref={videoRef}
-              className="absolute inset-0 w-full h-full object-contain bg-black"
-              playsInline
-              webkit-playsinline="true"
-              poster={anime.image}
-              onTimeUpdate={handleTimeUpdate}
-              onLoadedMetadata={handleLoadedMetadata}
-              onWaiting={handleWaiting}
-              onPlaying={handlePlaying}
-              onPause={handlePause}
-              onEnded={handleVideoEnded}
-              onError={handleVideoError}
-              onCanPlay={handleCanPlay}
-              onClick={handleVideoTap}
-            />
-          )}
-
-          {/* No server selected */}
-          {!currentServerUrl && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <img src={anime.image} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />
-              <div className="relative z-10 text-center">
-                <Play className="w-16 h-16 text-zinc-600 mx-auto mb-3" />
-                <p className="text-sm text-zinc-400">Select a server to start watching</p>
-              </div>
-            </div>
-          )}
-
-          {/* Big play button overlay (only for native) */}
-          {isNative && showPlayOverlay && (
-            <button
-              onClick={() => { handleInteraction(); togglePlay(); }}
-              className="absolute inset-0 z-20 flex items-center justify-center transition-opacity hover:opacity-80 focus:outline-none touch-manipulation"
-              aria-label="Play"
-            >
-              <div className="bg-white/20 backdrop-blur-sm rounded-full p-4 sm:p-5 md:p-8 shadow-2xl border border-white/30">
-                <Play className="w-10 h-10 sm:w-14 sm:h-14 md:w-20 md:h-20 text-white fill-white drop-shadow-lg" />
-              </div>
-              {isMobile && !isPlaying && <span className="absolute bottom-8 text-xs text-white/50">Tap to play</span>}
-            </button>
-          )}
-
-          {/* Bottom controls (only for native) – mobile-optimized */}
-          {isNative && currentServerUrl && !playerError && !codecWarning && (
-            <div
-              className={`
-                absolute bottom-0 left-0 right-0 z-20 
-                bg-gradient-to-t from-black/90 via-black/50 to-transparent 
-                p-2 sm:p-3 pt-8 sm:pt-12
-                transition-opacity duration-300
-                ${isMobile ? (controlsVisible ? 'opacity-100' : 'opacity-0') : 'opacity-0 hover:opacity-100'}
-              `}
-              onClick={handleInteraction}
-              onMouseEnter={handleInteraction}
-            >
-              <div ref={progressRef} className="w-full h-2 sm:h-1.5 bg-zinc-600/60 rounded-full cursor-pointer mb-2 sm:mb-3 relative group/progress" onClick={seekVideo}>
-                <div className="absolute left-0 top-0 h-full bg-red-600 rounded-full" style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }} />
-                <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 sm:w-3.5 sm:h-3.5 bg-red-500 rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity" style={{ left: `calc(${duration > 0 ? (currentTime / duration) * 100 : 0}% - 8px)` }} />
-              </div>
-
-              <div className="flex items-center justify-between flex-wrap gap-1 sm:gap-2">
-                <div className="flex items-center gap-1 sm:gap-3">
-                  <button onClick={() => { handleInteraction(); togglePlay(); }} className="text-white hover:text-red-400 p-1 touch-manipulation">
-                    {isPlaying ? <Pause className="w-5 h-5 sm:w-5 sm:h-5 fill-current" /> : <Play className="w-5 h-5 sm:w-5 sm:h-5 fill-current ml-0.5" />}
-                  </button>
-                  <button onClick={() => { handleInteraction(); skipTime(-10); }} className="text-white/80 hover:text-red-400 text-xs font-bold flex items-center gap-0.5 touch-manipulation">
-                    <RotateCcw className="w-4 h-4 inline" /> <span className="hidden xs:inline">10</span>
-                  </button>
-                  <button onClick={() => { handleInteraction(); skipTime(10); }} className="text-white/80 hover:text-red-400 text-xs font-bold flex items-center gap-0.5 touch-manipulation">
-                    <span className="hidden xs:inline">10</span> <RotateCw className="w-4 h-4 inline" />
-                  </button>
-                  <button onClick={() => { handleInteraction(); toggleMute(); }} className="text-white/80 hover:text-red-400 p-1 touch-manipulation">
-                    {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" /> : <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />}
-                  </button>
-                  {!isMobile && (
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      value={isMuted ? 0 : volume}
-                      onChange={(e) => { handleInteraction(); changeVolume(e); }}
-                      className="w-16 sm:w-20 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-red-500 [&::-webkit-slider-thumb]:rounded-full"
-                    />
-                  )}
-                  <span className="text-[10px] sm:text-xs text-zinc-400 font-mono hidden xs:inline">
-                    {formatTime(currentTime)} / {formatTime(duration)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <select
-                    value={playbackRate}
-                    onChange={(e) => { handleInteraction(); changePlaybackRate(parseFloat(e.target.value)); }}
-                    className="bg-zinc-800 border border-zinc-700 rounded-md px-1.5 sm:px-2 py-0.5 sm:py-1 text-[10px] sm:text-xs text-white touch-manipulation"
-                  >
-                    {[0.5, 0.75, 1, 1.25, 1.5, 2].map(r => <option key={r} value={r}>{r}x</option>)}
-                  </select>
-                  <button onClick={() => { handleInteraction(); toggleFullscreen(); }} className="text-white/80 hover:text-red-400 p-1 touch-manipulation">
-                    <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ===== ACTION BAR – one line on mobile ===== */}
-        <div className="flex flex-nowrap items-center gap-1 sm:gap-3 p-1.5 sm:p-3 bg-zinc-900/50 rounded-xl border border-zinc-800/50 overflow-x-auto">
-          <button
-            onClick={toggleBookmark}
-            className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all touch-manipulation whitespace-nowrap shrink-0 ${
-              isBookmarked
-                ? 'text-amber-400 bg-amber-500/10 ring-1 ring-amber-500/30'
-                : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-800'
-            }`}
-          >
-            <Bookmark className={`w-3.5 h-3.5 ${isBookmarked ? 'fill-current' : ''}`} />
-            {isBookmarked ? 'Bookmarked' : 'Bookmark'}
-          </button>
-
-          <button
-            onClick={handleShare}
-            className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold text-zinc-400 hover:text-blue-400 hover:bg-zinc-800 transition-all touch-manipulation whitespace-nowrap shrink-0"
-          >
-            <Share2 className="w-3.5 h-3.5" /> Share
-          </button>
-
-          <button
-            onClick={() => reportBrokenLink('User reported')}
-            disabled={reporting || reportSuccess}
-            className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-all touch-manipulation disabled:opacity-50 whitespace-nowrap shrink-0"
-          >
-            <Flag className="w-3.5 h-3.5" /> {reportSuccess ? 'Reported ✓' : 'Report'}
-          </button>
-
-          <div className="h-4 w-px bg-zinc-700 shrink-0" />
-
-          {availableLanguages.length > 0 && (
-            <select
-              value={selectedLanguage}
-              onChange={(e) => setSelectedLanguage(e.target.value)}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-1.5 sm:px-2 py-1 sm:py-1.5 text-[10px] sm:text-xs text-white touch-manipulation whitespace-nowrap shrink-0"
-            >
-              {availableLanguages.map((lang) => (
-                <option key={lang} value={lang}>{lang}</option>
-              ))}
-            </select>
-          )}
-
-          {currentServerKeys.length > 0 && (
-            <select
-              value={selectedServer}
-              onChange={(e) => handleServerChange(e.target.value)}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-1.5 sm:px-2 py-1 sm:py-1.5 text-[10px] sm:text-xs text-white touch-manipulation whitespace-nowrap shrink-0"
-            >
-              {currentServerKeys.map((server, index) => (
-                <option key={server} value={server}>
-                  Server {index + 1}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {/* Episode Grid – if more than one episode */}
+        {/* Episode List */}
         {allEpisodes.length > 1 && (
-          <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5 sm:gap-2 max-h-64 overflow-y-auto pr-1">
-            {allEpisodes.map((ep) => (
-              <button
-                key={ep.id}
-                onClick={() => handleSelectEpisode(ep)}
-                className={`px-1.5 sm:px-2 py-1.5 sm:py-2 rounded-lg text-xs font-bold transition-all text-center touch-manipulation ${
-                  ep.number === episode?.number
-                    ? 'bg-red-600 text-white'
-                    : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white'
-                }`}
-              >
-                {ep.number}
-              </button>
-            ))}
-          </div>
+          <EpisodeList
+            episodes={allEpisodes}
+            currentEpisode={episode}
+            onSelect={handleSelectEpisode}
+            episodeProgress={episodeProgress}
+          />
         )}
 
-        {/* Main Content: Left (Overview/Details + Recommendations) */}
+        {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
           <div className="lg:col-span-2 space-y-6">
-            <div className="max-h-[500px] overflow-y-auto pr-1 space-y-4 sm:space-y-6">
-              <div className="flex gap-4 sm:gap-6 border-b border-zinc-800 pb-2">
-                {['Overview', 'Details'].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab as any)}
-                    className={`text-xs sm:text-sm font-black pb-2 relative whitespace-nowrap transition-colors touch-manipulation ${
-                      activeTab === tab ? 'text-red-500' : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    {tab}
-                    {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-600 rounded-full" />}
-                  </button>
-                ))}
-              </div>
-
-              {activeTab === 'Overview' && (
-                <div className="space-y-3 sm:space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
-                    <div className="space-y-1 sm:space-y-2">
-                      <h1 className="text-xl sm:text-2xl font-black text-white">{anime.title}</h1>
-                      <div className="flex items-center gap-2 flex-wrap text-[10px] sm:text-xs text-zinc-400">
-                        <span>{anime.year}</span><span>•</span><span>{anime.type}</span><span>•</span><span>Ep {episode?.number ?? '?'}</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-start sm:items-end gap-1 sm:gap-2">
-                      <div className="flex items-center gap-0.5">
-                        {[1,2,3,4,5].map((s) => (
-                          <button
-                            key={s}
-                            onMouseEnter={() => setHoverRating(s * 2)}
-                            onMouseLeave={() => setHoverRating(0)}
-                            onClick={() => handleRate(s)}
-                            className="touch-manipulation"
-                          >
-                            <Star
-                              className={`w-4 h-4 sm:w-5 sm:h-5 ${
-                                (hoverRating || userRating) >= s * 2
-                                  ? 'fill-amber-400 text-amber-400'
-                                  : 'text-zinc-600'
-                              }`}
-                            />
-                          </button>
-                        ))}
-                      </div>
-                      <span className="text-[10px] sm:text-xs text-zinc-500">
-                        {userRating > 0 ? `Your rating: ${userRating}/10` : 'Rate this anime'}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">{anime.description}</p>
-                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                    {anime.genre.split(',').map((g) => (
-                      <span
-                        key={g}
-                        className="px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold bg-zinc-800/50 text-zinc-400"
-                      >
-                        {g.trim()}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'Details' && (
-                <div className="space-y-2 sm:space-y-3 text-xs text-zinc-400">
-                  <div className="grid grid-cols-2 gap-2 text-zinc-500">
-                    <div>Studio: <span className="text-zinc-300">{anime.studio || 'Unknown'}</span></div>
-                    <div>Status: <span className="text-red-500">{anime.status || '?'}</span></div>
-                    <div>Episodes: <span className="text-zinc-300">{anime.episodes || allEpisodes.length}</span></div>
-                    <div>Score: <span className="text-amber-400">★ {anime.score || '?'}</span></div>
-                  </div>
-                  <p className="text-xs">{anime.description}</p>
-                </div>
-              )}
-            </div>
-
-            {/* You May Also Like – horizontal scrollable */}
-            {recommendations.length > 0 && (
-              <div className="space-y-3 mt-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">You May Also Like</h3>
-                <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
-                  {recommendations.map((rec) => (
-                    <div
-                      key={rec.id}
-                      className="flex-shrink-0 w-[120px] sm:w-[140px] cursor-pointer group"
-                      onClick={() => router.push(`/watch?anime=${rec.id}`)}
-                    >
-                      <div className="aspect-[3/4] bg-zinc-900 rounded-lg overflow-hidden mb-2">
-                        <img
-                          src={rec.image}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          alt={rec.title}
-                        />
-                      </div>
-                      <h4 className="text-[10px] font-bold truncate text-zinc-200 group-hover:text-red-400">{rec.title}</h4>
-                      <p className="text-[9px] text-zinc-500">{rec.type} • ★ {rec.score}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <AnimeInfo
+              anime={anime}
+              episode={episode}
+              userRating={userRating}
+              hoverRating={hoverRating}
+              setHoverRating={setHoverRating}
+              onRate={handleRate}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+            />
+            <RecommendationsRow
+              recommendations={recommendations}
+              onSelect={(id: string) => router.push(`/watch?anime=${id}`)}
+            />
           </div>
 
-          {/* Right Column – Comments */}
-          <div className="space-y-4 lg:max-h-[500px] lg:overflow-y-auto lg:sticky lg:top-4">
-            <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">Comments</h3>
-            {user ? (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Add a comment..."
-                  className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none touch-manipulation"
-                  onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
-                />
-                <button
-                  onClick={handleSubmitComment}
-                  className="bg-red-600 px-3 py-2 rounded-lg text-white text-xs font-bold touch-manipulation"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => router.push('/profile')}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2.5 text-xs font-bold text-zinc-400 hover:text-red-400 hover:border-red-500/50 flex items-center justify-center gap-2 transition-all touch-manipulation"
-              >
-                <LogIn className="w-3.5 h-3.5" /> Login to comment
-              </button>
-            )}
-            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-              {comments.slice(0, 10).map((c) => (
-                <div key={c.id} className="space-y-1.5 pb-3 border-b border-zinc-800/50">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-purple-500 rounded-full text-[10px] font-black flex items-center justify-center">
-                      {c.avatar}
-                    </div>
-                    <span className="text-xs font-bold text-zinc-200">{c.username}</span>
-                    <span className="text-[9px] text-zinc-500">
-                      {new Date(c.timestamp).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-400 pl-8 break-words">{c.text}</p>
-                </div>
-              ))}
-              {comments.length === 0 && (
-                <p className="text-xs text-zinc-500 text-center py-4">No comments yet. Be the first!</p>
-              )}
-            </div>
-          </div>
+          {/* Comments */}
+          <CommentSection
+            user={user}
+            comments={comments}
+            newComment={newComment}
+            setNewComment={setNewComment}
+            onSubmit={handleSubmitComment}
+            onLogin={() => router.push('/profile')}
+          />
         </div>
       </main>
     </div>

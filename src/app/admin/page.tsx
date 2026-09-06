@@ -120,7 +120,6 @@ export default function AdminPanel() {
   const [scheduleItems, setScheduleItems] = useState<any[]>([]);
   const [newsItems, setNewsItems] = useState<any[]>([]);
   const [featuredIds, setFeaturedIds] = useState<string[]>([]);
-  const [newlyAddedIds, setNewlyAddedIds] = useState<string[]>([]);
 
   const [reports, setReports] = useState<any[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
@@ -156,8 +155,7 @@ export default function AdminPanel() {
   const [vidapiResults, setVidapiResults] = useState<any[]>([]);
   const [vidapiLoading, setVidapiLoading] = useState(false);
 
-  // Sliders
-  const [slidersTab, setSlidersTab] = useState<'featured' | 'newlyAdded'>('featured');
+  // Sliders (only featured now)
   const [sliderSearch, setSliderSearch] = useState('');
 
   // Episode manager
@@ -172,11 +170,19 @@ export default function AdminPanel() {
   });
   const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
 
-  const [addServerForm, setAddServerForm] = useState<{ episodeId: string | null, language: string, serverName: string, link: string }>({
+  // Add Server form - now properly managed
+  const [addServerForm, setAddServerForm] = useState<{ 
+    episodeId: string | null; 
+    language: string; 
+    serverName: string; 
+    link: string;
+    isOpen: boolean;
+  }>({
     episodeId: null,
     language: 'jap',
     serverName: '',
-    link: ''
+    link: '',
+    isOpen: false
   });
 
   const [serverManagementModal, setServerManagementModal] = useState<{
@@ -268,13 +274,12 @@ export default function AdminPanel() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [animeRes, episodesRes, scheduleRes, newsRes, featuredRes, newlyAddedRes] = await Promise.all([
+      const [animeRes, episodesRes, scheduleRes, newsRes, featuredRes] = await Promise.all([
         CloudflareAPI.getAnime(),
         CloudflareAPI.getEpisodes(),
         CloudflareAPI.getSchedule(),
         CloudflareAPI.getNews(),
         CloudflareAPI.getFeatured(),
-        CloudflareAPI.getNewlyAdded(),
       ]);
       const animeArr = Array.isArray(animeRes.anime) ? animeRes.anime : [];
       const episodeArr = Array.isArray(episodesRes.episodes) ? episodesRes.episodes : [];
@@ -282,12 +287,48 @@ export default function AdminPanel() {
       setEpisodes(episodeArr);
       setScheduleItems(Array.isArray(scheduleRes.schedule) ? scheduleRes.schedule : []);
       setNewsItems(Array.isArray(newsRes.news) ? newsRes.news : []);
-      setFeaturedIds(Array.isArray(featuredRes.featured) ? featuredRes.featured : []);
-      setNewlyAddedIds(Array.isArray(newlyAddedRes.newlyAdded) ? newlyAddedRes.newlyAdded : []);
+      
+      let cleanFeatured = Array.isArray(featuredRes.featured) ? featuredRes.featured : [];
+      cleanFeatured = cleanFeatured.filter((id: string) => id && id.trim() !== '');
+      cleanFeatured = cleanFeatured.filter((id: string) => animeArr.some((a: any) => a.id === id));
+      cleanFeatured = [...new Set(cleanFeatured)];
+      
+      setFeaturedIds(cleanFeatured);
+      
+      if (cleanFeatured.length !== (Array.isArray(featuredRes.featured) ? featuredRes.featured.length : 0)) {
+        await CloudflareAPI.putFeatured(cleanFeatured);
+        showNotification('Cleaned up invalid featured entries', 'success');
+      }
     } catch (err) {
       showNotification('Failed to load data!', 'error');
     }
     setLoading(false);
+  };
+
+  const refreshData = async () => {
+    try {
+      const [animeRes, episodesRes, scheduleRes, newsRes, featuredRes] = await Promise.all([
+        CloudflareAPI.getAnime(),
+        CloudflareAPI.getEpisodes(),
+        CloudflareAPI.getSchedule(),
+        CloudflareAPI.getNews(),
+        CloudflareAPI.getFeatured(),
+      ]);
+      const animeArr = Array.isArray(animeRes.anime) ? animeRes.anime : [];
+      const episodeArr = Array.isArray(episodesRes.episodes) ? episodesRes.episodes : [];
+      setAnimeList(animeArr);
+      setEpisodes(episodeArr);
+      setScheduleItems(Array.isArray(scheduleRes.schedule) ? scheduleRes.schedule : []);
+      setNewsItems(Array.isArray(newsRes.news) ? newsRes.news : []);
+      
+      let cleanFeatured = Array.isArray(featuredRes.featured) ? featuredRes.featured : [];
+      cleanFeatured = cleanFeatured.filter((id: string) => id && id.trim() !== '');
+      cleanFeatured = cleanFeatured.filter((id: string) => animeArr.some((a: any) => a.id === id));
+      cleanFeatured = [...new Set(cleanFeatured)];
+      setFeaturedIds(cleanFeatured);
+    } catch (err) {
+      console.error('Refresh failed:', err);
+    }
   };
 
   useEffect(() => {
@@ -417,7 +458,7 @@ export default function AdminPanel() {
           existingTitles.add(newsItem.title);
         }
       }
-      await loadAllData();
+      await refreshData();
       if (added > 0) {
         showNotification(`Imported ${added} new articles!`);
       } else {
@@ -437,11 +478,12 @@ export default function AdminPanel() {
       const result = await CloudflareAPI.postAnime(animeData);
       if (result.success && result.anime) {
         setAnimeList(prev => [...prev, result.anime]);
+        showNotification(`${animeData.title} imported!`);
       } else {
-        await loadAllData();
+        await refreshData();
+        showNotification(`${animeData.title} imported!`);
       }
       setImportResults(prev => prev.filter((r: any) => r.id !== apiItem.id));
-      showNotification(`${animeData.title} imported!`);
     } catch (err) {
       showNotification('Import failed!', 'error');
     }
@@ -458,13 +500,13 @@ export default function AdminPanel() {
         count++;
       } catch (err) {}
     }
-    await loadAllData();
+    await refreshData();
     setImportResults([]);
     showNotification(`Imported ${count} anime!`);
     setIsImporting(false);
   };
 
-  // ---------- VIDNEST IMPORT (MERGED) ----------
+  // ---------- VIDNEST IMPORT ----------
   const handleVidnestSearch = async () => {
     if (!vidnestQuery.trim()) return;
     setVidnestLoading(true);
@@ -520,7 +562,6 @@ export default function AdminPanel() {
 
       if (!animeId) throw new Error('No anime ID');
 
-      // --- Fetch existing episodes for this anime ---
       const allEpisodesRes = await CloudflareAPI.getEpisodes();
       const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
       const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
@@ -548,7 +589,6 @@ export default function AdminPanel() {
         const existingEp = existingMap.get(epNumber);
 
         if (existingEp) {
-          // ---- MERGE into existing episode ----
           const mergedLanguages = { ...(existingEp.languages || {}) };
           const mergedServers = { ...(existingEp.servers || {}) };
 
@@ -573,7 +613,6 @@ export default function AdminPanel() {
             added++;
           }
         } else {
-          // ---- NEW episode ----
           const epDataObj = {
             anime_id: animeId,
             number: epNumber,
@@ -593,7 +632,7 @@ export default function AdminPanel() {
         }
       }
 
-      await loadAllData();
+      await refreshData();
       showNotification(`Imported ${added} episodes from Vidnest for "${vnResult.title}"`);
 
     } catch (err) {
@@ -602,17 +641,11 @@ export default function AdminPanel() {
     setIsImporting(false);
   };
 
-  // ---------- NXSHA IMPORT (MERGED & ENHANCED) ----------
+  // ---------- NXSHA IMPORT ----------
   const handleNxshaAction = async () => {
     const query = nxshaQuery.trim();
     if (!query) return;
-
-    const isNumeric = /^\d+$/.test(query);
-    if (isNumeric) {
-      await handleNxshaSearch(query);
-    } else {
-      await handleNxshaSearch(query);
-    }
+    await handleNxshaSearch(query);
   };
 
   const handleNxshaSearch = async (queryOverride?: string) => {
@@ -671,7 +704,6 @@ export default function AdminPanel() {
 
       if (!animeId) throw new Error('No anime ID');
 
-      // Fetch existing episodes for this anime
       const allEpisodesRes = await CloudflareAPI.getEpisodes();
       const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
       const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
@@ -745,7 +777,7 @@ export default function AdminPanel() {
         }
       }
 
-      await loadAllData();
+      await refreshData();
       showNotification(`Imported ${added} episodes from Nxsha for "${result.title}"`);
 
     } catch (err) {
@@ -754,7 +786,7 @@ export default function AdminPanel() {
     setIsImporting(false);
   };
 
-  // ---------- ANIKOTO IMPORT (MERGED) ----------
+  // ---------- ANIKOTO IMPORT ----------
   const handleAnikotoSearch = async () => {
     if (!anikotoQuery.trim()) return;
     setAnikotoLoading(true);
@@ -810,12 +842,11 @@ export default function AdminPanel() {
 
       if (!animeId) throw new Error('No anime ID');
 
-      // --- Fetch existing episodes for this anime ---
       const allEpisodesRes = await CloudflareAPI.getEpisodes();
       const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
       const existingMap = new Map<number, any>(existingEpisodes.map((ep: any) => [ep.number, ep]));
 
-      const language = anikotoLanguage; // 'sub' or 'dub'
+      const language = anikotoLanguage;
       
       let url = `/api/stream-servers/anikoto/episodes?anikotoId=${result.anikotoId || ''}&language=${language}`;
       if (result.mal_id) url += `&malId=${result.mal_id}`;
@@ -883,7 +914,7 @@ export default function AdminPanel() {
         }
       }
 
-      await loadAllData();
+      await refreshData();
       showNotification(`Imported ${added} episodes from Anikoto/MegaPlay for "${result.title}"`);
 
     } catch (err) {
@@ -892,7 +923,7 @@ export default function AdminPanel() {
     setIsImporting(false);
   };
 
-  // ==================== VIDAPI IMPORT (All Seasons + Metadata) ====================
+  // ==================== VIDAPI IMPORT ====================
   const handleVidapiSearch = async () => {
     if (!vidapiQuery.trim()) return;
     setVidapiLoading(true);
@@ -914,12 +945,11 @@ export default function AdminPanel() {
   const importVidapiAnime = async (result: any) => {
     setIsImporting(true);
     try {
-      // 1. Build the anime data object with explicit fallbacks
       const animeData = {
         title: result.title || 'Unknown Title',
         type: result.type || 'TV',
         status: result.status || 'Ongoing',
-        episodes: 0, // we'll update later
+        episodes: 0,
         score: result.score || 0,
         year: result.year?.toString() || new Date().getFullYear().toString(),
         genre: result.genre || '',
@@ -930,9 +960,6 @@ export default function AdminPanel() {
         imdb_id: result.imdb_id || null,
       };
 
-      // Log the data to see if it's correct
-      console.log('📦 Importing anime with data:', animeData);
-
       let animeId: string | null = null;
       const existing = animeList.find((a: any) => 
         a.title?.toLowerCase() === animeData.title?.toLowerCase()
@@ -941,15 +968,12 @@ export default function AdminPanel() {
       if (existing) {
         animeId = existing.id;
         showNotification(`Anime "${animeData.title}" already exists, updating metadata...`);
-        // 🔥 Force update with all fields
         const updateResult = await CloudflareAPI.putAnime({ id: animeId, ...animeData });
-        console.log('🔄 Update result:', updateResult);
         if (!updateResult.success) {
           console.warn('Failed to update anime metadata:', updateResult);
         }
       } else {
         const res = await CloudflareAPI.postAnime(animeData);
-        console.log('➕ Create result:', res);
         if (res.success && res.anime) {
           animeId = res.anime.id;
           setAnimeList(prev => [...prev, res.anime]);
@@ -961,26 +985,22 @@ export default function AdminPanel() {
 
       if (!animeId) throw new Error('No anime ID');
 
-      // 2. Fetch existing episodes for this anime (to merge)
       const allEpisodesRes = await CloudflareAPI.getEpisodes();
       const existingEpisodes = allEpisodesRes.episodes?.filter((ep: any) => ep.anime_id === animeId) || [];
-      const existingMap = new Map<string, any>(); // key: "season-episode"
+      const existingMap = new Map<string, any>();
       existingEpisodes.forEach((ep: any) => {
         const key = `${ep.season || 1}-${ep.number}`;
         existingMap.set(key, ep);
       });
 
-      // 3. Determine episodes to import
       let episodesToImport: { season: number; number: number; link: string }[] = [];
 
-      // If it's a movie, just one episode
       if (result.type?.toLowerCase() === 'movie') {
         const link = result.imdb_id 
           ? `https://vaplayer.ru/embed/movie/${result.imdb_id}`
           : `https://vaplayer.ru/embed/movie/${result.tmdb_id}`;
         episodesToImport.push({ season: 1, number: 1, link });
       } else {
-        // TV show: fetch all seasons from TMDB
         const seasons = await fetchTMDBTVSeasons(parseInt(result.tmdb_id));
         if (seasons && Array.isArray(seasons) && seasons.length > 0) {
           const filteredSeasons = seasons.filter((s: any) => s.season_number > 0 && s.episode_count > 0);
@@ -1020,7 +1040,6 @@ export default function AdminPanel() {
         return;
       }
 
-      // 4. Merge or create episodes
       let added = 0;
       const langKey = 'jap';
       const newServerName = 'VidAPI';
@@ -1078,7 +1097,6 @@ export default function AdminPanel() {
         }
       }
 
-      // 5. Final update: set total episodes and force metadata again
       const totalEpisodesCount = episodesToImport.length;
       const finalUpdate = {
         id: animeId,
@@ -1095,11 +1113,10 @@ export default function AdminPanel() {
         tmdb_id: animeData.tmdb_id,
         imdb_id: animeData.imdb_id,
       };
-      console.log('📤 Final update to anime:', finalUpdate);
       await CloudflareAPI.putAnime(finalUpdate);
       setAnimeList(prev => prev.map((a: any) => a.id === animeId ? { ...a, ...animeData, episodes: totalEpisodesCount } : a));
 
-      await loadAllData();
+      await refreshData();
       showNotification(`Imported ${added} episodes from VidAPI for "${result.title}" (Total: ${totalEpisodesCount} episodes)`);
 
     } catch (err: any) {
@@ -1206,6 +1223,27 @@ export default function AdminPanel() {
     }
   };
 
+  // ==================== ADD SERVER TO EPISODE ====================
+  const openAddServerForm = (episodeId: string) => {
+    setAddServerForm({
+      episodeId: episodeId,
+      language: 'jap',
+      serverName: '',
+      link: '',
+      isOpen: true
+    });
+  };
+
+  const closeAddServerForm = () => {
+    setAddServerForm({
+      episodeId: null,
+      language: 'jap',
+      serverName: '',
+      link: '',
+      isOpen: false
+    });
+  };
+
   const addServerToEpisode = async () => {
     const { episodeId, language, serverName, link } = addServerForm;
     if (!episodeId || !language || !serverName || !link) {
@@ -1234,7 +1272,7 @@ export default function AdminPanel() {
       if (result.success) {
         setEpisodes(prev => prev.map(e => e.id === episodeId ? { ...e, languages: updatedLanguages, servers: updatedServers } : e));
         showNotification(`Server "${serverName}" added to episode ${ep.number}!`);
-        setAddServerForm({ episodeId: null, language: 'jap', serverName: '', link: '' });
+        closeAddServerForm();
       } else {
         showNotification('Failed to add server.', 'error');
       }
@@ -1279,6 +1317,58 @@ export default function AdminPanel() {
     }
   };
 
+  const removeServerFromEpisode = async (episodeId: string, language: string, serverName: string) => {
+    if (!confirm(`Remove "${serverName}" server for ${getLanguageDisplay(language)}?`)) return;
+    
+    try {
+      const ep = episodes.find(e => e.id === episodeId);
+      if (!ep) {
+        showNotification('Episode not found.', 'error');
+        return;
+      }
+
+      const updatedServers = { ...(ep.servers || {}) };
+      const updatedLanguages = { ...(ep.languages || {}) };
+
+      if (updatedServers[language] && updatedServers[language][serverName]) {
+        delete updatedServers[language][serverName];
+        
+        if (Object.keys(updatedServers[language]).length === 0) {
+          delete updatedServers[language];
+          delete updatedLanguages[language];
+        } else {
+          const firstServer = Object.keys(updatedServers[language])[0];
+          updatedLanguages[language] = updatedServers[language][firstServer];
+        }
+      }
+
+      await CloudflareAPI.putEpisode({
+        id: episodeId,
+        anime_id: ep.anime_id,
+        number: ep.number,
+        title: ep.title,
+        languages: updatedLanguages,
+        servers: updatedServers,
+      });
+
+      setEpisodes(prev => prev.map(e => 
+        e.id === episodeId ? { ...e, languages: updatedLanguages, servers: updatedServers } : e
+      ));
+
+      if (serverManagementModal && serverManagementModal.episode.id === episodeId) {
+        setServerManagementModal({
+          ...serverManagementModal,
+          episode: { ...serverManagementModal.episode, languages: updatedLanguages, servers: updatedServers }
+        });
+      }
+
+      showNotification(`Server "${serverName}" removed!`);
+
+    } catch (err) {
+      showNotification('Failed to remove server.', 'error');
+    }
+  };
+
   // ==================== SCHEDULE ====================
   const addSchedule = async () => {
     if (!scheduleForm.title && !scheduleForm.anime_id) {
@@ -1314,7 +1404,7 @@ export default function AdminPanel() {
             }),
           }).catch(() => {});
         } else {
-          await loadAllData();
+          await refreshData();
         }
         showNotification('Added!');
       }
@@ -1356,7 +1446,7 @@ export default function AdminPanel() {
           anime_id: null,
         });
       }
-      await loadAllData();
+      await refreshData();
       showNotification(`Added ${Math.min(trending.length, 7)} shows!`);
     } catch (err) {
       showNotification('Failed!', 'error');
@@ -1385,14 +1475,18 @@ export default function AdminPanel() {
       }
       newFeatured = featuredIds.filter(fid => fid !== id);
     } else {
-      if (featuredIds.length >= 5) {
-        showNotification('Max 5!', 'error');
+      if (featuredIds.length >= 11) {
+        showNotification('Max 11!', 'error');
         return;
       }
       newFeatured = [...featuredIds, id];
     }
+    newFeatured = [...new Set(newFeatured)];
+    newFeatured = newFeatured.filter((fid: string) => fid && fid.trim() !== '');
+    newFeatured = newFeatured.filter((fid: string) => animeList.some((a: any) => a.id === fid));
     setFeaturedIds(newFeatured);
     await CloudflareAPI.putFeatured(newFeatured);
+    showNotification(`Featured updated (${newFeatured.length}/11)`);
   };
 
   const moveFeatured = async (id: string, dir: string) => {
@@ -1404,29 +1498,20 @@ export default function AdminPanel() {
     await CloudflareAPI.putFeatured(newOrder);
   };
 
-  const toggleNewlyAdded = async (id: string) => {
-    let updated: string[];
-    if (newlyAddedIds.includes(id)) {
-      updated = newlyAddedIds.filter(fid => fid !== id);
+  const cleanUpFeatured = async () => {
+    const validIds = animeList.map((a: any) => a.id);
+    const cleanIds = featuredIds
+      .filter((id: string) => id && id.trim() !== '')
+      .filter((id: string) => validIds.includes(id));
+    const uniqueIds = [...new Set(cleanIds)];
+    if (uniqueIds.length !== featuredIds.length) {
+      setFeaturedIds(uniqueIds);
+      await CloudflareAPI.putFeatured(uniqueIds);
+      showNotification(`Cleaned up! Removed ${featuredIds.length - uniqueIds.length} invalid entries. Now ${uniqueIds.length}/11`, 'success');
     } else {
-      updated = [...newlyAddedIds, id];
+      showNotification('All entries are valid!', 'success');
     }
-    setNewlyAddedIds(updated);
-    await CloudflareAPI.putNewlyAdded(updated);
   };
-
-  const moveNewlyAdded = async (id: string, dir: string) => {
-    const idx = newlyAddedIds.indexOf(id);
-    if ((dir === 'up' && idx === 0) || (dir === 'down' && idx === newlyAddedIds.length - 1)) return;
-    const newOrder = [...newlyAddedIds];
-    [newOrder[idx], newOrder[dir === 'up' ? idx - 1 : idx + 1]] = [newOrder[dir === 'up' ? idx - 1 : idx + 1], newOrder[idx]];
-    setNewlyAddedIds(newOrder);
-    await CloudflareAPI.putNewlyAdded(newOrder);
-  };
-
-  const currentIds = slidersTab === 'featured' ? featuredIds : newlyAddedIds;
-  const toggleCurrent = slidersTab === 'featured' ? toggleFeatured : toggleNewlyAdded;
-  const moveCurrent = slidersTab === 'featured' ? moveFeatured : moveNewlyAdded;
 
   // ==================== NEWS ====================
   const saveNews = async () => {
@@ -1488,11 +1573,6 @@ export default function AdminPanel() {
         setFeaturedIds(nf);
         await CloudflareAPI.putFeatured(nf);
       }
-      if (newlyAddedIds.includes(id)) {
-        const nf = newlyAddedIds.filter(fid => fid !== id);
-        setNewlyAddedIds(nf);
-        await CloudflareAPI.putNewlyAdded(nf);
-      }
       showNotification('Deleted!');
     } catch (err) {
       showNotification('Failed!', 'error');
@@ -1521,7 +1601,7 @@ export default function AdminPanel() {
         languages: updatedLanguages,
         servers: updatedServers,
       });
-      await loadAllData();
+      await refreshData();
       showNotification('Link updated!');
       setQuickEditEp(null);
     } catch (err) {
@@ -1707,21 +1787,13 @@ export default function AdminPanel() {
                     <label className="text-xs text-white/40 flex items-center">Embed Type:</label>
                     <button
                       onClick={() => setSelectedVidnestType('anime')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                        selectedVidnestType === 'anime' 
-                          ? 'bg-purple-600 text-white' 
-                          : 'bg-white/5 text-white/40'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${selectedVidnestType === 'anime' ? 'bg-purple-600 text-white' : 'bg-white/5 text-white/40'}`}
                     >
                       Vidnest Anime
                     </button>
                     <button
                       onClick={() => setSelectedVidnestType('animepahe')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                        selectedVidnestType === 'animepahe' 
-                          ? 'bg-purple-600 text-white' 
-                          : 'bg-white/5 text-white/40'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${selectedVidnestType === 'animepahe' ? 'bg-purple-600 text-white' : 'bg-white/5 text-white/40'}`}
                     >
                       AnimePahe
                     </button>
@@ -1735,19 +1807,11 @@ export default function AdminPanel() {
                           <div className="w-14 h-20 rounded-lg bg-cover bg-center shrink-0" style={{ backgroundImage: `url(${result.image})` }} />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-white">{result.title}</p>
-                            <p className="text-xs text-white/30">
-                              {result.type} • {result.episodes} eps • ★{result.score}
-                            </p>
+                            <p className="text-xs text-white/30">{result.type} • {result.episodes} eps • ★{result.score}</p>
                             <p className="text-xs text-white/20 line-clamp-1">{result.genre}</p>
                             <p className="text-[10px] text-white/20 mt-1">AniList ID: {result.anilistId}</p>
                           </div>
-                          <button
-                            onClick={() => importVidnestAnime(result)}
-                            disabled={isImporting}
-                            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-purple-600/80 hover:bg-purple-600 shrink-0 disabled:opacity-50"
-                          >
-                            Import Anime + Episodes
-                          </button>
+                          <button onClick={() => importVidnestAnime(result)} disabled={isImporting} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-purple-600/80 hover:bg-purple-600 shrink-0 disabled:opacity-50">Import Anime + Episodes</button>
                         </div>
                       ))}
                     </div>
@@ -1761,53 +1825,22 @@ export default function AdminPanel() {
               {importTab === 'nxsha' && (
                 <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
                   <div className="flex gap-3 mb-4">
-                    <input
-                      type="text"
-                      value={nxshaQuery}
-                      onChange={(e) => setNxshaQuery(e.target.value)}
-                      placeholder="Search by title or paste TMDb ID (e.g., 1399)..."
-                      className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-blue-500 outline-none"
-                      onKeyDown={(e) => e.key === 'Enter' && handleNxshaAction()}
-                    />
-                    <button
-                      onClick={handleNxshaAction}
-                      disabled={isImporting || !nxshaQuery.trim()}
-                      className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2"
-                      style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}
-                    >
-                      {isImporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                      Search Nxsha
-                    </button>
+                    <input type="text" value={nxshaQuery} onChange={(e) => setNxshaQuery(e.target.value)} placeholder="Search by title or paste TMDb ID (e.g., 1399)..." className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-blue-500 outline-none" onKeyDown={(e) => e.key === 'Enter' && handleNxshaAction()} />
+                    <button onClick={handleNxshaAction} disabled={isImporting || !nxshaQuery.trim()} className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2" style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}>{isImporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}Search Nxsha</button>
                   </div>
 
                   <div className="flex gap-3 mb-4 flex-wrap">
                     <div className="flex items-center gap-2">
                       <label className="text-xs text-white/40">Season:</label>
-                      <input
-                        type="number"
-                        value={nxshaSeason}
-                        onChange={(e) => setNxshaSeason(parseInt(e.target.value) || 1)}
-                        min="1"
-                        className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white w-20"
-                      />
+                      <input type="number" value={nxshaSeason} onChange={(e) => setNxshaSeason(parseInt(e.target.value) || 1)} min="1" className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white w-20" />
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="text-xs text-white/40">Total Episodes:</label>
-                      <input
-                        type="number"
-                        value={nxshaTotalEpisodes}
-                        onChange={(e) => setNxshaTotalEpisodes(parseInt(e.target.value) || 1)}
-                        min="1"
-                        className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white w-20"
-                      />
+                      <input type="number" value={nxshaTotalEpisodes} onChange={(e) => setNxshaTotalEpisodes(parseInt(e.target.value) || 1)} min="1" className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white w-20" />
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="text-xs text-white/40">Language:</label>
-                      <select
-                        value={nxshaLanguage}
-                        onChange={(e) => setNxshaLanguage(e.target.value)}
-                        className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white"
-                      >
+                      <select value={nxshaLanguage} onChange={(e) => setNxshaLanguage(e.target.value)} className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white">
                         {Object.entries(LANGUAGE_DISPLAY_NAMES).map(([code, name]) => (
                           <option key={code} value={code}>{name}</option>
                         ))}
@@ -1825,25 +1858,11 @@ export default function AdminPanel() {
                             <p className="text-sm font-bold text-white">{result.title}</p>
                             <p className="text-xs text-white/30">{result.type} • {result.episodes} eps</p>
                             <div className="flex gap-2 mt-1 flex-wrap">
-                              {result.tmdbId && (
-                                <span className="text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded">
-                                  TMDb ID: {result.tmdbId}
-                                </span>
-                              )}
-                              {result.season && result.type !== 'Movie' && (
-                                <span className="text-[10px] text-white/20 bg-white/5 px-1.5 py-0.5 rounded">
-                                  Season {result.season}
-                                </span>
-                              )}
+                              {result.tmdbId && <span className="text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded">TMDb ID: {result.tmdbId}</span>}
+                              {result.season && result.type !== 'Movie' && <span className="text-[10px] text-white/20 bg-white/5 px-1.5 py-0.5 rounded">Season {result.season}</span>}
                             </div>
                           </div>
-                          <button
-                            onClick={() => importNxshaAnime(result, nxshaLanguage)}
-                            disabled={isImporting}
-                            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600/80 hover:bg-blue-600 shrink-0 disabled:opacity-50"
-                          >
-                            Import Anime + Episodes
-                          </button>
+                          <button onClick={() => importNxshaAnime(result, nxshaLanguage)} disabled={isImporting} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600/80 hover:bg-blue-600 shrink-0 disabled:opacity-50">Import Anime + Episodes</button>
                         </div>
                       ))}
                     </div>
@@ -1857,47 +1876,14 @@ export default function AdminPanel() {
               {importTab === 'anikoto' && (
                 <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
                   <div className="flex gap-3 mb-4">
-                    <input
-                      type="text"
-                      value={anikotoQuery}
-                      onChange={(e) => setAnikotoQuery(e.target.value)}
-                      placeholder="Search anime on Anikoto..."
-                      className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-green-500 outline-none"
-                      onKeyDown={(e) => e.key === 'Enter' && handleAnikotoSearch()}
-                    />
-                    <button
-                      onClick={handleAnikotoSearch}
-                      disabled={anikotoLoading}
-                      className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2"
-                      style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
-                    >
-                      {anikotoLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                      Search Anikoto
-                    </button>
+                    <input type="text" value={anikotoQuery} onChange={(e) => setAnikotoQuery(e.target.value)} placeholder="Search anime on Anikoto..." className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-green-500 outline-none" onKeyDown={(e) => e.key === 'Enter' && handleAnikotoSearch()} />
+                    <button onClick={handleAnikotoSearch} disabled={anikotoLoading} className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2" style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>{anikotoLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}Search Anikoto</button>
                   </div>
 
                   <div className="flex gap-3 mb-4">
                     <label className="text-xs text-white/40 flex items-center">Language:</label>
-                    <button
-                      onClick={() => setAnikotoLanguage('sub')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                        anikotoLanguage === 'sub' 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-white/5 text-white/40'
-                      }`}
-                    >
-                      Sub
-                    </button>
-                    <button
-                      onClick={() => setAnikotoLanguage('dub')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                        anikotoLanguage === 'dub' 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-white/5 text-white/40'
-                      }`}
-                    >
-                      Dub
-                    </button>
+                    <button onClick={() => setAnikotoLanguage('sub')} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${anikotoLanguage === 'sub' ? 'bg-green-600 text-white' : 'bg-white/5 text-white/40'}`}>Sub</button>
+                    <button onClick={() => setAnikotoLanguage('dub')} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${anikotoLanguage === 'dub' ? 'bg-green-600 text-white' : 'bg-white/5 text-white/40'}`}>Dub</button>
                   </div>
 
                   {anikotoResults.length > 0 && (
@@ -1908,22 +1894,12 @@ export default function AdminPanel() {
                           <div className="w-14 h-20 rounded-lg bg-cover bg-center shrink-0" style={{ backgroundImage: `url(${result.image})` }} />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-white">{result.title}</p>
-                            <p className="text-xs text-white/30">
-                              {result.type} • {result.episodes} eps • ★{result.score}
-                            </p>
+                            <p className="text-xs text-white/30">{result.type} • {result.episodes} eps • ★{result.score}</p>
                             <p className="text-xs text-white/20 line-clamp-1">{result.genre}</p>
-                            {result.note && (
-                              <p className="text-[10px] text-amber-400/70 mt-1">{result.note}</p>
-                            )}
+                            {result.note && <p className="text-[10px] text-amber-400/70 mt-1">{result.note}</p>}
                             <p className="text-[10px] text-white/20 mt-1">MAL ID: {result.mal_id}</p>
                           </div>
-                          <button
-                            onClick={() => importAnikotoAnime(result)}
-                            disabled={isImporting}
-                            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-green-600/80 hover:bg-green-600 shrink-0 disabled:opacity-50"
-                          >
-                            Import Anime + Episodes
-                          </button>
+                          <button onClick={() => importAnikotoAnime(result)} disabled={isImporting} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-green-600/80 hover:bg-green-600 shrink-0 disabled:opacity-50">Import Anime + Episodes</button>
                         </div>
                       ))}
                     </div>
@@ -1934,27 +1910,11 @@ export default function AdminPanel() {
                 </div>
               )}
 
-              {/* === VIDAPI TAB === */}
               {importTab === 'vidapi' && (
                 <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
                   <div className="flex gap-3 mb-4">
-                    <input
-                      type="text"
-                      value={vidapiQuery}
-                      onChange={(e) => setVidapiQuery(e.target.value)}
-                      placeholder="Search anime for VidAPI embed..."
-                      className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-indigo-500 outline-none"
-                      onKeyDown={(e) => e.key === 'Enter' && handleVidapiSearch()}
-                    />
-                    <button
-                      onClick={handleVidapiSearch}
-                      disabled={vidapiLoading}
-                      className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2"
-                      style={{ background: 'linear-gradient(135deg, #6366f1, #4f46e5)' }}
-                    >
-                      {vidapiLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                      Search VidAPI
-                    </button>
+                    <input type="text" value={vidapiQuery} onChange={(e) => setVidapiQuery(e.target.value)} placeholder="Search anime for VidAPI embed..." className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-indigo-500 outline-none" onKeyDown={(e) => e.key === 'Enter' && handleVidapiSearch()} />
+                    <button onClick={handleVidapiSearch} disabled={vidapiLoading} className="px-5 py-3 rounded-xl text-white font-bold text-xs flex items-center gap-2" style={{ background: 'linear-gradient(135deg, #6366f1, #4f46e5)' }}>{vidapiLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}Search VidAPI</button>
                   </div>
 
                   {vidapiResults.length > 0 && (
@@ -1968,33 +1928,13 @@ export default function AdminPanel() {
                             <p className="text-xs text-white/30">{result.type} • {result.episodes} eps • ★{result.score}</p>
                             <p className="text-xs text-white/20 line-clamp-1">{result.genre}</p>
                             <div className="flex gap-2 mt-1 flex-wrap">
-                              {result.tmdb_id && (
-                                <span className="text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded">
-                                  TMDB: {result.tmdb_id}
-                                </span>
-                              )}
-                              {result.imdb_id && (
-                                <span className="text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded">
-                                  IMDB: {result.imdb_id}
-                                </span>
-                              )}
-                              {!result.tmdb_id && !result.imdb_id && (
-                                <span className="text-[10px] text-yellow-400/60">⚠️ No external ID found</span>
-                              )}
-                              {result.season && (
-                                <span className="text-[10px] text-white/20 bg-white/5 px-1.5 py-0.5 rounded">
-                                  Season {result.season}
-                                </span>
-                              )}
+                              {result.tmdb_id && <span className="text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded">TMDB: {result.tmdb_id}</span>}
+                              {result.imdb_id && <span className="text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded">IMDB: {result.imdb_id}</span>}
+                              {!result.tmdb_id && !result.imdb_id && <span className="text-[10px] text-yellow-400/60">⚠️ No external ID found</span>}
+                              {result.season && <span className="text-[10px] text-white/20 bg-white/5 px-1.5 py-0.5 rounded">Season {result.season}</span>}
                             </div>
                           </div>
-                          <button
-                            onClick={() => importVidapiAnime(result)}
-                            disabled={isImporting || (!result.imdb_id && !result.tmdb_id)}
-                            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600/80 hover:bg-indigo-600 shrink-0 disabled:opacity-50"
-                          >
-                            Import Anime + Episodes
-                          </button>
+                          <button onClick={() => importVidapiAnime(result)} disabled={isImporting || (!result.imdb_id && !result.tmdb_id)} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600/80 hover:bg-indigo-600 shrink-0 disabled:opacity-50">Import Anime + Episodes</button>
                         </div>
                       ))}
                     </div>
@@ -2013,21 +1953,11 @@ export default function AdminPanel() {
             <div className="space-y-6">
               <div><h2 className="text-xl font-black text-white">Episode Manager</h2></div>
               <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                <input
-                  type="text"
-                  placeholder="Search anime..."
-                  value={episodeSearch}
-                  onChange={(e) => setEpisodeSearch(e.target.value)}
-                  className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-purple-500 outline-none mb-4"
-                />
+                <input type="text" placeholder="Search anime..." value={episodeSearch} onChange={(e) => setEpisodeSearch(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:border-purple-500 outline-none mb-4" />
                 {!selectedAnimeForEp && (
                   <div className="max-h-60 overflow-y-auto space-y-1">
                     {filteredAnimeForEp.map((a: any) => (
-                      <button
-                        key={a.id}
-                        onClick={() => setSelectedAnimeForEp(a)}
-                        className="w-full text-left px-3 py-2 rounded-lg text-sm text-white hover:bg-white/5 flex items-center gap-3"
-                      >
+                      <button key={a.id} onClick={() => setSelectedAnimeForEp(a)} className="w-full text-left px-3 py-2 rounded-lg text-sm text-white hover:bg-white/5 flex items-center gap-3">
                         <div className="w-8 h-10 rounded bg-cover shrink-0" style={{ backgroundImage: `url(${a.image})` }} />
                         {a.title}
                       </button>
@@ -2105,8 +2035,9 @@ export default function AdminPanel() {
                             </div>
                           );
                         })}
+                        {/* ADD SERVER BUTTON - FIXED */}
                         <button
-                          onClick={() => setAddServerForm({ episodeId: ep.id, language: 'jap', serverName: 'Server 2', link: '' })}
+                          onClick={() => openAddServerForm(ep.id)}
                           className="text-[10px] text-blue-400 hover:underline"
                         >
                           + Add Server
@@ -2114,21 +2045,39 @@ export default function AdminPanel() {
                       </div>
                     </div>
                   ))}
-                  {addServerForm.episodeId && (
+                  
+                  {/* ADD SERVER FORM - FIXED to show properly */}
+                  {addServerForm.isOpen && addServerForm.episodeId && (
                     <div className="p-4 bg-white/5 border-t border-white/5">
                       <h4 className="text-xs font-bold text-white mb-2">Add Server to Episode #{episodes.find(e => e.id === addServerForm.episodeId)?.number}</h4>
                       <div className="grid grid-cols-4 gap-2">
-                        <select value={addServerForm.language} onChange={(e) => setAddServerForm({...addServerForm, language: e.target.value})} className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white">
+                        <select 
+                          value={addServerForm.language} 
+                          onChange={(e) => setAddServerForm({...addServerForm, language: e.target.value})} 
+                          className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white"
+                        >
                           {Object.keys(LANGUAGE_DISPLAY_NAMES).map(lang => (
                             <option key={lang} value={lang}>{lang}</option>
                           ))}
                         </select>
-                        <input type="text" value={addServerForm.serverName} onChange={(e) => setAddServerForm({...addServerForm, serverName: e.target.value})} placeholder="Server name" className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white" />
-                        <input type="text" value={addServerForm.link} onChange={(e) => setAddServerForm({...addServerForm, link: e.target.value})} placeholder="Link" className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white col-span-2" />
+                        <input 
+                          type="text" 
+                          value={addServerForm.serverName} 
+                          onChange={(e) => setAddServerForm({...addServerForm, serverName: e.target.value})} 
+                          placeholder="Server name" 
+                          className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white" 
+                        />
+                        <input 
+                          type="text" 
+                          value={addServerForm.link} 
+                          onChange={(e) => setAddServerForm({...addServerForm, link: e.target.value})} 
+                          placeholder="Link" 
+                          className="bg-black/30 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white col-span-2" 
+                        />
                       </div>
                       <div className="flex gap-2 mt-2">
                         <button onClick={addServerToEpisode} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white">Add Server</button>
-                        <button onClick={() => setAddServerForm({ episodeId: null, language: 'jap', serverName: '', link: '' })} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white/50">Cancel</button>
+                        <button onClick={closeAddServerForm} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white/50">Cancel</button>
                       </div>
                     </div>
                   )}
@@ -2172,102 +2121,64 @@ export default function AdminPanel() {
           {activeSection === 'sliders' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
-                <div><h2 className="text-xl font-black text-white">Sliders</h2></div>
-              </div>
-
-              <div className="flex gap-2 border-b border-white/5 pb-2">
-                <button
-                  onClick={() => setSlidersTab('featured')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${slidersTab === 'featured' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-white/40 hover:text-white/70'}`}
-                >
-                  <Star className="w-4 h-4 inline mr-1" /> Featured
-                </button>
-                <button
-                  onClick={() => setSlidersTab('newlyAdded')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${slidersTab === 'newlyAdded' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-white/40 hover:text-white/70'}`}
-                >
-                  <Gift className="w-4 h-4 inline mr-1" /> Newly Added
-                </button>
+                <div><h2 className="text-xl font-black text-white">Featured Slider</h2></div>
               </div>
 
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-                <input
-                  type="text"
-                  value={sliderSearch}
-                  onChange={(e) => setSliderSearch(e.target.value)}
-                  placeholder={`Search anime to add to ${slidersTab === 'featured' ? 'Featured' : 'Newly Added'}...`}
-                  className="w-full bg-black/30 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/20 focus:border-purple-500 outline-none"
-                />
+                <input type="text" value={sliderSearch} onChange={(e) => setSliderSearch(e.target.value)} placeholder="Search anime to add to Featured..." className="w-full bg-black/30 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/20 focus:border-purple-500 outline-none" />
               </div>
 
               <div className="rounded-2xl border border-white/5 p-4 md:p-6" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                <p className="text-xs text-white/30 mb-4">
-                  {slidersTab === 'featured' ? 'Select 1-5 anime for the Featured slider' : 'Select anime to show in the Newly Added section (no limit)'}
-                </p>
+                <div className="flex justify-between items-center mb-4">
+                  <p className="text-xs text-white/30">Select 1-11 anime for the Featured slider</p>
+                  <button onClick={cleanUpFeatured} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600/20 text-red-400 border border-red-600/30 hover:bg-red-600/30"><RefreshCw className="w-3 h-3 inline mr-1" />Clean Up Invalid</button>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-                  {animeList
-                    .filter(anime => anime.title.toLowerCase().includes(sliderSearch.toLowerCase()))
-                    .map((anime: any) => {
-                      const isSelected = currentIds.includes(anime.id);
-                      return (
-                        <button
-                          key={anime.id}
-                          onClick={() => toggleCurrent(anime.id)}
-                          className={`rounded-2xl overflow-hidden border-2 transition-all ${isSelected ? 'border-amber-500' : 'border-transparent hover:border-white/10'}`}
-                        >
-                          <div className="aspect-[3/4] bg-cover bg-center relative" style={{ backgroundImage: `url(${anime.image})` }}>
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80"/>
-                            {isSelected && (
-                              <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center">
-                                <Star className="w-4 h-4 text-white fill-current"/>
-                              </div>
-                            )}
-                            <div className="absolute bottom-3 left-3 right-3">
-                              <p className="text-xs font-black text-white line-clamp-1">{anime.title}</p>
-                              <p className="text-[10px] text-white/50">{anime.type} • ★{anime.score}</p>
-                            </div>
+                  {animeList.filter(anime => anime.title.toLowerCase().includes(sliderSearch.toLowerCase())).map((anime: any) => {
+                    const isSelected = featuredIds.includes(anime.id);
+                    return (
+                      <button key={anime.id} onClick={() => toggleFeatured(anime.id)} className={`rounded-2xl overflow-hidden border-2 transition-all ${isSelected ? 'border-amber-500' : 'border-transparent hover:border-white/10'}`}>
+                        <div className="aspect-[3/4] bg-cover bg-center relative" style={{ backgroundImage: `url(${anime.image})` }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80"/>
+                          {isSelected && <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center"><Star className="w-4 h-4 text-white fill-current"/></div>}
+                          <div className="absolute bottom-3 left-3 right-3">
+                            <p className="text-xs font-black text-white line-clamp-1">{anime.title}</p>
+                            <p className="text-[10px] text-white/50">{anime.type} • ★{anime.score}</p>
                           </div>
-                        </button>
-                      );
-                    })}
+                        </div>
+                      </button>
+                    );
+                  })}
                   {animeList.filter(a => a.title.toLowerCase().includes(sliderSearch.toLowerCase())).length === 0 && (
                     <div className="col-span-full text-center text-white/30 text-sm py-8">No anime found matching "{sliderSearch}"</div>
                   )}
                 </div>
                 <div className="border-t border-white/5 pt-4">
-                  <h3 className="text-sm font-bold text-white mb-3">Order ({currentIds.length}{slidersTab === 'featured' ? '/5' : ''})</h3>
-                  {currentIds.length === 0 ? (
+                  <h3 className="text-sm font-bold text-white mb-3">Order ({featuredIds.length}/11)</h3>
+                  {featuredIds.length === 0 ? (
                     <p className="text-xs text-zinc-500">No anime selected yet.</p>
                   ) : (
-                    currentIds.map((id, idx) => {
+                    featuredIds.map((id, idx) => {
                       const anime = animeList.find((a: any) => a.id === id);
-                      if (!anime) return null;
+                      if (!anime) {
+                        return (
+                          <div key={id} className="flex items-center gap-3 p-3 rounded-xl border border-red-500/30 mb-2 bg-red-500/5">
+                            <span className="text-lg font-black text-red-500 w-8">#{idx + 1}</span>
+                            <div className="flex-1"><p className="text-sm text-red-400">Invalid entry (ID: {id})</p></div>
+                            <button onClick={() => toggleFeatured(id)} className="p-1.5 text-red-400 hover:text-red-300"><X className="w-4 h-4" /></button>
+                          </div>
+                        );
+                      }
                       return (
                         <div key={id} className="flex items-center gap-3 p-3 rounded-xl border border-white/5 mb-2">
                           <span className="text-lg font-black text-amber-500 w-8">#{idx + 1}</span>
                           <div className="w-10 h-14 rounded-lg bg-cover shrink-0" style={{ backgroundImage: `url(${anime.image})` }} />
-                          <div className="flex-1">
-                            <p className="text-sm text-white">{anime.title}</p>
-                          </div>
+                          <div className="flex-1"><p className="text-sm text-white">{anime.title}</p></div>
                           <div className="flex gap-1">
-                            <button
-                              onClick={() => moveCurrent(id, 'up')}
-                              disabled={idx === 0}
-                              className="p-1.5 text-white/30 disabled:opacity-20"
-                            >
-                              <ArrowLeft className="w-4 h-4 rotate-90" />
-                            </button>
-                            <button
-                              onClick={() => moveCurrent(id, 'down')}
-                              disabled={idx === currentIds.length - 1}
-                              className="p-1.5 text-white/30 disabled:opacity-20"
-                            >
-                              <ArrowRight className="w-4 h-4 rotate-90" />
-                            </button>
-                            <button onClick={() => toggleCurrent(id)} className="p-1.5 text-white/30 hover:text-red-400">
-                              <X className="w-4 h-4" />
-                            </button>
+                            <button onClick={() => moveFeatured(id, 'up')} disabled={idx === 0} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowLeft className="w-4 h-4 rotate-90" /></button>
+                            <button onClick={() => moveFeatured(id, 'down')} disabled={idx === featuredIds.length - 1} className="p-1.5 text-white/30 disabled:opacity-20"><ArrowRight className="w-4 h-4 rotate-90" /></button>
+                            <button onClick={() => toggleFeatured(id)} className="p-1.5 text-white/30 hover:text-red-400"><X className="w-4 h-4" /></button>
                           </div>
                         </div>
                       );
@@ -2312,13 +2223,7 @@ export default function AdminPanel() {
               <div className="flex flex-wrap gap-2 items-center">
                 <button onClick={() => setContentLang(null)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${contentLang === null ? 'bg-white text-black' : 'bg-white/5 text-white/40'}`}>All</button>
                 {allEpisodeDisplayNames.map((displayName) => (
-                  <button
-                    key={displayName}
-                    onClick={() => setContentLang(displayName === contentLang ? null : displayName)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold ${contentLang === displayName ? 'bg-purple-600 text-white' : 'bg-white/5 text-white/40'}`}
-                  >
-                    {displayName}
-                  </button>
+                  <button key={displayName} onClick={() => setContentLang(displayName === contentLang ? null : displayName)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${contentLang === displayName ? 'bg-purple-600 text-white' : 'bg-white/5 text-white/40'}`}>{displayName}</button>
                 ))}
               </div>
 
@@ -2346,9 +2251,7 @@ export default function AdminPanel() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-white">{anime.title}</p>
                           <p className="text-xs text-white/30">{anime.type} • {anime.genre?.split(',').slice(0,2).join(', ')} • ★{anime.score}</p>
-                          {animeReports.length > 0 && (
-                            <p className="text-xs text-red-400">⚠️ {animeReports.length} report{animeReports.length > 1 ? 's' : ''}</p>
-                          )}
+                          {animeReports.length > 0 && <p className="text-xs text-red-400">⚠️ {animeReports.length} report{animeReports.length > 1 ? 's' : ''}</p>}
                         </div>
                         <div className="flex gap-1">
                           <button onClick={() => openEditAnime(anime)} className="p-2 text-white/30 hover:text-blue-400"><Edit className="w-4 h-4"/></button>
@@ -2365,19 +2268,7 @@ export default function AdminPanel() {
                                 <span className="ml-2 text-red-300">{report.reason}</span>
                               </div>
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => {
-                                    setQuickEditEp({ animeId: report.animeId, epNumber: report.episodeNumber });
-                                    const ep = episodes.find((e: any) => e.anime_id == report.animeId && e.number == report.episodeNumber);
-                                    if (ep) {
-                                      const firstLang = Object.keys(ep.languages || {})[0] || '';
-                                      setQuickEditUrl(ep.languages?.[firstLang] || '');
-                                    }
-                                  }}
-                                  className="px-2 py-1 rounded bg-purple-600/20 text-purple-400 text-xs"
-                                >
-                                  Fix Link
-                                </button>
+                                <button onClick={() => { setQuickEditEp({ animeId: report.animeId, epNumber: report.episodeNumber }); const ep = episodes.find((e: any) => e.anime_id == report.animeId && e.number == report.episodeNumber); if (ep) { const firstLang = Object.keys(ep.languages || {})[0] || ''; setQuickEditUrl(ep.languages?.[firstLang] || ''); } }} className="px-2 py-1 rounded bg-purple-600/20 text-purple-400 text-xs">Fix Link</button>
                                 <button onClick={() => deleteReport(report.id)} className="px-2 py-1 rounded bg-white/5 text-white/40 text-xs">Dismiss</button>
                               </div>
                             </div>
@@ -2442,13 +2333,7 @@ export default function AdminPanel() {
           <div className="bg-[#1a1a2e] rounded-2xl border border-white/10 p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-black text-white mb-4">Fix Episode Link</h3>
             <p className="text-xs text-white/50 mb-2">Anime: {quickEditEp.animeId} | Episode: {quickEditEp.epNumber}</p>
-            <input
-              type="text"
-              value={quickEditUrl}
-              onChange={(e) => setQuickEditUrl(e.target.value)}
-              placeholder="Paste new video URL..."
-              className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white mb-4"
-            />
+            <input type="text" value={quickEditUrl} onChange={(e) => setQuickEditUrl(e.target.value)} placeholder="Paste new video URL..." className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white mb-4" />
             <div className="flex gap-2">
               <button onClick={() => fixReportedLink(quickEditEp.animeId, quickEditEp.epNumber, quickEditUrl)} className="px-4 py-2 rounded-xl text-white font-bold text-sm bg-purple-600">Save Link</button>
               <button onClick={() => setQuickEditEp(null)} className="px-4 py-2 rounded-xl text-white/50 text-sm bg-white/5">Cancel</button>
@@ -2467,41 +2352,56 @@ export default function AdminPanel() {
             </div>
             <p className="text-xs text-white/40 mb-4">Episode #{serverManagementModal.episode.number} – {serverManagementModal.animeTitle}</p>
             
-            {Object.entries(serverManagementModal.episode.servers || {}).map(([lang, serversObj]) => {
-              const serversRecord = serversObj as Record<string, string>;
-              return (
-                <div key={lang} className="mb-4 p-3 rounded-xl border border-white/5 bg-white/5">
-                  <h4 className="text-sm font-bold text-white mb-2">{getLanguageDisplay(lang)}</h4>
-                  {Object.entries(serversRecord).map(([serverName, url]) => (
-                    <div key={serverName} className="flex items-center gap-2 mb-2">
-                      <span className="text-xs text-white/40 w-24 flex-shrink-0">{serverName}</span>
-                      <input
-                        type="text"
-                        value={url}
-                        onChange={(e) => {
-                          const updatedEp = { ...serverManagementModal.episode };
-                          updatedEp.servers[lang][serverName] = e.target.value;
-                          setServerManagementModal({ ...serverManagementModal, episode: updatedEp });
-                        }}
-                        className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500"
-                      />
-                      <button
-                        onClick={() => {
-                          const newLink = serverManagementModal.episode.servers[lang][serverName];
-                          editServerLink(serverManagementModal.episode.id, lang, serverName, newLink);
-                        }}
-                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 flex-shrink-0"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
+            {Object.entries(serverManagementModal.episode.servers || {}).length === 0 ? (
+              <p className="text-center text-white/30 py-8">No servers found for this episode.</p>
+            ) : (
+              Object.entries(serverManagementModal.episode.servers || {}).map(([lang, serversObj]) => {
+                const serversRecord = serversObj as Record<string, string>;
+                return (
+                  <div key={lang} className="mb-4 p-3 rounded-xl border border-white/5 bg-white/5">
+                    <h4 className="text-sm font-bold text-white mb-2 flex items-center justify-between">
+                      <span>{getLanguageDisplay(lang)}</span>
+                      <span className="text-xs font-normal text-white/30">{Object.keys(serversRecord).length} server{Object.keys(serversRecord).length > 1 ? 's' : ''}</span>
+                    </h4>
+                    {Object.entries(serversRecord).map(([serverName, url]) => (
+                      <div key={serverName} className="flex items-center gap-2 mb-2 group">
+                        <span className="text-xs text-white/40 w-24 flex-shrink-0 truncate" title={serverName}>{serverName}</span>
+                        <input
+                          type="text"
+                          value={url}
+                          onChange={(e) => {
+                            const updatedEp = { ...serverManagementModal.episode };
+                            updatedEp.servers[lang][serverName] = e.target.value;
+                            setServerManagementModal({ ...serverManagementModal, episode: updatedEp });
+                          }}
+                          className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500"
+                        />
+                        <button
+                          onClick={() => {
+                            const newLink = serverManagementModal.episode.servers[lang][serverName];
+                            editServerLink(serverManagementModal.episode.id, lang, serverName, newLink);
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 flex-shrink-0"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => removeServerFromEpisode(serverManagementModal.episode.id, lang, serverName)}
+                          className="p-1.5 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all flex-shrink-0 opacity-60 group-hover:opacity-100"
+                          title={`Remove ${serverName}`}
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })
+            )}
             
-            <div className="text-xs text-white/30 mt-4 text-center">
-              Tip: You can also use the "Add Server" button below the episode to add a new server.
+            <div className="text-xs text-white/30 mt-4 text-center border-t border-white/5 pt-4">
+              <p>💡 Edit any server URL and click <span className="text-green-400">Save</span> to update.</p>
+              <p className="mt-1">Click the <span className="text-red-400">×</span> button to remove a server.</p>
             </div>
           </div>
         </div>

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import {
   Play, Plus, Flame, ChevronLeft, ChevronRight, Bookmark, X,
-  ArrowLeft, Loader2
+  ArrowLeft, Loader2, ChevronDown, Check, ArrowUp
 } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import { supabase } from '@/lib/supabaseClient';
@@ -120,9 +121,19 @@ function normalizeType(type: string | undefined | null): string {
 }
 
 // ============================================================
-// FALLBACK IMAGE
+// LIGHTWEIGHT FALLBACK – small SVG (TV icon + "No Preview")
 // ============================================================
-const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1560942485-b2a11cc13456?w=400&q=80";
+const FALLBACK_IMAGE = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="200" height="280">
+    <rect width="200" height="280" fill="#1a1a2e"/>
+    <rect x="35" y="45" width="130" height="95" rx="5" fill="#1f1f2e" stroke="#ef4444" stroke-width="2.5"/>
+    <rect x="80" y="140" width="40" height="12" rx="2" fill="#ef4444"/>
+    <line x1="100" y1="140" x2="100" y2="118" stroke="#ef4444" stroke-width="2.5"/>
+    <circle cx="100" cy="92" r="22" fill="none" stroke="#ef4444" stroke-width="2"/>
+    <polygon points="82,92 118,80 118,104" fill="#ef4444" opacity="0.25"/>
+    <text x="100" y="178" font-family="Arial, sans-serif" font-size="11" fill="#555" text-anchor="middle">No Preview</text>
+  </svg>`
+)}`;
 
 function getSafeImage(url: string | undefined | null): string {
   if (!url || url.trim() === '') return FALLBACK_IMAGE;
@@ -130,69 +141,221 @@ function getSafeImage(url: string | undefined | null): string {
 }
 
 // ============================================================
-// COMPONENTS
+// SKELETON COMPONENT
 // ============================================================
-function HeroSection({ anime, onPrev, onNext, onWatch, onToggleList, isInList }: any) {
+const CarouselSkeleton = ({ count = 7 }: { count?: number }) => (
+  <div className="flex gap-3 overflow-x-auto pb-2">
+    {Array.from({ length: count }).map((_, i) => (
+      <div key={i} className="flex-shrink-0 w-[110px] md:w-[150px] space-y-2">
+        <div className="aspect-[3/4.2] bg-zinc-800 rounded-lg animate-pulse" />
+        <div className="h-3 bg-zinc-800 rounded w-3/4 animate-pulse" />
+        <div className="h-2 bg-zinc-800 rounded w-1/2 animate-pulse" />
+      </div>
+    ))}
+  </div>
+);
+
+// ============================================================
+// FULL LIST OVERLAY (same as before, but uses AnimeCard)
+// ============================================================
+function FullListOverlay({ type, title, items, onClose, onPlay, onToggleList, isInList }: any) {
+  const [visibleCount, setVisibleCount] = useState(50);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const batchSize = 50;
+
+  useEffect(() => {
+    setVisibleCount(Math.min(50, items.length));
+  }, [items]);
+
+  const visibleItems = items.slice(0, visibleCount);
+  const hasMore = visibleCount < items.length;
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    setVisibleCount(prev => Math.min(prev + batchSize, items.length));
+    setLoadingMore(false);
+  };
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-[#0d0e1a] rounded-2xl w-full max-w-7xl max-h-[90vh] flex flex-col shadow-2xl border border-white/10 animate-slideUp">
+        <div className="flex items-center justify-between p-4 border-b border-white/5 shrink-0">
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors" aria-label="Close">
+              <X className="w-5 h-5" />
+            </button>
+            <h2 className="text-lg md:text-xl font-bold text-white">{title}</h2>
+          </div>
+          <span className="text-xs font-medium text-zinc-400 bg-white/5 px-3 py-1 rounded-full">
+            {items.length} {items.length === 1 ? 'item' : 'items'}
+          </span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
+            {visibleItems.map((item: any) => (
+              <AnimeCard
+                key={item.id}
+                anime={item}
+                onPlay={() => onPlay(item)}
+                onToggleList={() => onToggleList(item)}
+                isInList={isInList(item)}
+              />
+            ))}
+          </div>
+
+          <div className="mt-8 flex justify-center">
+            {hasMore ? (
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium text-zinc-300 hover:text-white transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {loadingMore ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  `Load More (${visibleCount}/${items.length})`
+                )}
+              </button>
+            ) : items.length > 0 ? (
+              <div className="flex items-center gap-2 text-sm text-zinc-500">
+                <Check className="w-4 h-4 text-emerald-400" />
+                All {items.length} items loaded
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">No items to show</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-fadeIn { animation: fadeIn 0.2s ease-out; }
+        .animate-slideUp { animation: slideUp 0.3s ease-out; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+      `}</style>
+    </div>
+  );
+}
+
+// ============================================================
+// MEMOIZED COMPONENTS
+// ============================================================
+const HeroSection = React.memo(function HeroSection({ anime, index, total, onPrev, onNext, onWatch, onToggleList, isInList }: any) {
+  const [expanded, setExpanded] = useState(false);
+  const description = anime?.description || "No description available.";
+  const isLongDescription = description.length > 120;
+  const truncatedDesc = isLongDescription ? description.slice(0, 120) + '...' : description;
+  const [imgError, setImgError] = useState(false);
+
+  if (!anime) {
+    return (
+      <section className="relative w-full h-[300px] md:h-[440px] overflow-hidden bg-[#0c0d19] shadow-2xl flex items-center justify-center">
+        <div className="absolute inset-0 bg-gradient-to-t from-[#06070d] via-transparent to-black/20 z-10" />
+        <div className="relative z-20 text-center text-zinc-400 px-6">
+          <div className="text-5xl md:text-7xl mb-4">🎌</div>
+          <p className="text-lg md:text-2xl font-bold text-white">No featured anime available</p>
+          <p className="text-sm md:text-base text-zinc-500 mt-2 max-w-md mx-auto">
+            We're currently updating our spotlight selection. Please check back later or try refreshing the page.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  const spotlightNumber = index !== undefined && index !== null ? index + 1 : 1;
+  const toggleExpand = () => setExpanded(!expanded);
+
   return (
     <section className="relative w-full h-[300px] md:h-[440px] overflow-hidden bg-[#0c0d19] shadow-2xl flex items-center">
       <div className="absolute inset-0 bg-gradient-to-t from-[#06070d] via-transparent to-black/20 z-10" />
       <div className="absolute inset-y-0 left-0 w-full md:w-3/5 bg-gradient-to-r from-[#070913] via-[#070913]/95 to-transparent z-10" />
       <div className="absolute right-0 top-0 bottom-0 w-full md:w-1/2 opacity-40 md:opacity-100 z-0">
-        <img
-          src={getSafeImage(anime?.image)}
+        <Image
+          src={imgError ? FALLBACK_IMAGE : getSafeImage(anime.image)}
           alt="Featured"
-          className="w-full h-full object-cover object-right transition-all duration-700"
+          fill
+          className="object-cover object-right transition-all duration-700"
+          priority
+          sizes="(max-width: 768px) 100vw, 50vw"
+          onError={() => setImgError(true)}
+          unoptimized
         />
       </div>
       <div className="absolute right-6 top-6 z-20 hidden md:flex items-center gap-1.5">
-        <button onClick={onPrev} className="w-7 h-7 bg-black/40 border border-zinc-800 rounded flex items-center justify-center text-zinc-400 hover:text-amber-400 transition-all">
+        <button onClick={onPrev} className="w-7 h-7 bg-black/40 border border-zinc-800 rounded flex items-center justify-center text-zinc-400 hover:text-amber-400 transition-all" aria-label="Previous slide">
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <button onClick={onNext} className="w-7 h-7 bg-black/40 border border-zinc-800 rounded flex items-center justify-center text-zinc-400 hover:text-amber-400 transition-all">
+        <button onClick={onNext} className="w-7 h-7 bg-black/40 border border-zinc-800 rounded flex items-center justify-center text-zinc-400 hover:text-amber-400 transition-all" aria-label="Next slide">
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
       <div className="relative pl-5 md:pl-16 pr-5 max-w-xl z-20 space-y-3 w-full">
         <span className="inline-block bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider shadow-[0_0_10px_rgba(245,158,11,0.2)]">
-          #1 Spotlight
+          #{spotlightNumber} Spotlight
         </span>
-        <h1 className="text-2xl md:text-5xl font-black tracking-tight leading-tight text-white drop-shadow line-clamp-2">
-          {anime?.title || "Monogatari Series"}
-        </h1>
-        <p className="hidden md:block text-xs sm:text-sm text-zinc-400 leading-relaxed max-w-md line-clamp-2">
-          {anime?.description || "Experience the mind‑bending supernatural world of Monogatari."}
-        </p>
+        <h1 className="text-xl md:text-4xl font-black tracking-tight leading-tight text-white drop-shadow line-clamp-2">{anime.title}</h1>
+        <div className="hidden md:block">
+          <div className="text-xs sm:text-sm text-zinc-400 leading-relaxed max-w-md transition-all duration-300 overflow-hidden" style={{ maxHeight: expanded ? '500px' : '3.6rem' }}>
+            {expanded ? description : truncatedDesc}
+          </div>
+          {isLongDescription && (
+            <button onClick={toggleExpand} className="text-amber-400 text-xs font-semibold hover:text-amber-300 transition-colors mt-1 flex items-center gap-1" aria-label={expanded ? 'Show less' : 'Show more'}>
+              {expanded ? 'Show less' : 'more...'}
+              <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2 pt-0.5">
-          <button
-            onClick={onWatch}
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 transition-all text-black text-[11px] md:text-xs font-bold py-2 px-4 rounded-lg shadow-lg shadow-amber-500/20"
-          >
+          <button onClick={onWatch} className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 transition-all text-black text-[11px] md:text-xs font-bold py-2 px-4 rounded-lg shadow-lg shadow-amber-500/20" aria-label="Watch now">
             <Play className="w-3.5 h-3.5 fill-current" /> Watch Now
           </button>
-          <button
-            onClick={onToggleList}
-            className="p-2 bg-zinc-900/60 border border-zinc-800/80 rounded-lg text-white hover:bg-zinc-800 hover:border-amber-500/50 transition-all"
-          >
-            {isInList ? (
-              <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
-            ) : (
-              <Plus className="w-4 h-4" />
-            )}
+          <button onClick={onToggleList} className="p-2 bg-zinc-900/60 border border-zinc-800/80 rounded-lg text-white hover:bg-zinc-800 hover:border-amber-500/50 transition-all" aria-label={isInList ? 'Remove from watchlist' : 'Add to watchlist'}>
+            {isInList ? <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]" /> : <Plus className="w-4 h-4" />}
           </button>
         </div>
-        <div className="flex items-center gap-2 text-[10px] md:text-[11px] font-semibold text-zinc-500 pt-0.5">
+        <div className="flex items-center gap-2 text-[10px] md:text-[11px] font-semibold text-zinc-500 pt-0.5 flex-wrap">
           <span className="text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded">95% Match</span>
-          <span className="bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">
-            {anime?.type || "TV Series"}
-          </span>
+          <span className="bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">{anime.type || "TV Series"}</span>
           <span className="bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">16+</span>
         </div>
       </div>
     </section>
   );
-}
+});
 
-function GenreFilter({ genres, activeGenre, onSelect, showAll, onToggleShowAll }: any) {
+const GenreFilter = React.memo(function GenreFilter({ genres, activeGenre, onSelect, showAll, onToggleShowAll }: any) {
   return (
     <section className="overflow-x-auto flex gap-1.5 md:gap-2 scrollbar-none pb-0.5 px-0">
       {genres.map((g: any, i: number) => (
@@ -202,6 +365,7 @@ function GenreFilter({ genres, activeGenre, onSelect, showAll, onToggleShowAll }
           className={`px-2.5 md:px-3.5 py-1 md:py-1.5 border rounded-md text-[10px] md:text-xs font-medium whitespace-nowrap transition-all duration-200 flex items-center gap-1 ${
             activeGenre === g.name ? "bg-amber-500 border-amber-500 text-black shadow-[0_0_10px_rgba(245,158,11,0.3)]" : "bg-[#0b0c14] border-zinc-900/80 hover:border-amber-500/50 text-zinc-400 hover:text-amber-400"
           }`}
+          aria-label={`Filter by ${g.name}`}
         >
           <span className="text-xs md:text-base">{g.icon}</span> <span className="hidden md:inline">{g.name}</span>
           <span className="md:hidden">{g.name === "All" ? "All" : g.name === "More" ? "More" : g.name.substring(0, 6)}</span>
@@ -209,19 +373,31 @@ function GenreFilter({ genres, activeGenre, onSelect, showAll, onToggleShowAll }
       ))}
     </section>
   );
-}
+});
 
-function AnimeCard({ anime, onPlay, onToggleList, isInList, rank }: any) {
+// ------ KEY FIX: faster image loading with unoptimized and NO sizes for small cards ------
+const AnimeCard = React.memo(function AnimeCard({ anime, onPlay, onToggleList, isInList, rank }: any) {
+  const [imgError, setImgError] = useState(false);
+
   return (
     <div className="group space-y-1 flex-shrink-0 w-[110px] md:w-[150px]">
       <div className="relative aspect-[3/4.2] bg-zinc-900 rounded-lg overflow-hidden border border-zinc-900 group-hover:border-amber-500/30 transition-all cursor-pointer" onClick={onPlay}>
-        <img src={getSafeImage(anime.image)} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt={anime.title} />
-        {rank ? (
+        <Image
+          src={imgError ? FALLBACK_IMAGE : getSafeImage(anime.image)}
+          alt={anime.title}
+          fill
+          className="object-cover group-hover:scale-105 transition-transform"
+          loading="lazy"
+          onError={() => setImgError(true)}
+          unoptimized
+          // NO 'sizes' – speeds up loading for small cards
+        />
+        {rank && (
           <span className="absolute top-1.5 left-1.5 bg-black/50 backdrop-blur-sm text-white text-xs md:text-sm font-black px-2 py-0.5 rounded-md shadow-lg">
             #{rank}
           </span>
-        ) : null}
-        <button onClick={(e) => { e.stopPropagation(); onToggleList(); }} className="absolute top-1 right-1 p-0.5 md:p-1 bg-black/60 rounded-full text-white/70 hover:text-amber-400 transition-colors z-10">
+        )}
+        <button onClick={(e) => { e.stopPropagation(); onToggleList(); }} className="absolute top-1 right-1 p-0.5 md:p-1 bg-black/60 rounded-full text-white/70 hover:text-amber-400 transition-colors z-10" aria-label={isInList ? 'Remove from watchlist' : 'Add to watchlist'}>
           <Bookmark className={`w-2.5 h-2.5 md:w-3 md:h-3 ${isInList ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]' : ''}`} />
         </button>
         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
@@ -237,13 +413,24 @@ function AnimeCard({ anime, onPlay, onToggleList, isInList, rank }: any) {
       </div>
     </div>
   );
-}
+});
 
-function EpisodeCard({ episode, anime, onPlay }: any) {
+// EpisodeCard also uses unoptimized, no sizes
+const EpisodeCard = React.memo(function EpisodeCard({ episode, anime, onPlay }: any) {
+  const [imgError, setImgError] = useState(false);
+
   return (
     <div className="group space-y-1 flex-shrink-0 w-[110px] md:w-[150px]">
       <div className="relative aspect-[3/4.2] bg-zinc-900 border border-zinc-900 rounded-lg overflow-hidden group-hover:border-amber-500/30 transition-all cursor-pointer" onClick={onPlay}>
-        <img src={getSafeImage(anime?.image)} className="w-full h-full object-cover group-hover:scale-105" alt={anime?.title || "Anime"} />
+        <Image
+          src={imgError ? FALLBACK_IMAGE : getSafeImage(anime?.image)}
+          alt={anime?.title || "Anime"}
+          fill
+          className="object-cover group-hover:scale-105"
+          loading="lazy"
+          onError={() => setImgError(true)}
+          unoptimized
+        />
         <span className="absolute bottom-1 right-1 bg-black/80 text-[7px] md:text-[8px] font-bold text-zinc-400 px-1 rounded">EP {episode.number}</span>
         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
           <div className="w-6 h-6 md:w-7 md:h-7 bg-amber-500 rounded-full flex items-center justify-center cursor-pointer hover:bg-amber-600 transition-colors">
@@ -255,92 +442,20 @@ function EpisodeCard({ episode, anime, onPlay }: any) {
       <p className="text-[8px] md:text-[10px] text-zinc-500 truncate">{episode.title || `Episode ${episode.number}`}</p>
     </div>
   );
-}
+});
 
-function SectionHeader({ title, icon, onViewAll }: any) {
+const SectionHeader = React.memo(function SectionHeader({ title, icon, onViewAll }: any) {
   return (
     <div className="flex justify-between items-center">
       <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
         <span className="text-xs md:text-base">{icon}</span> {title}
       </h3>
       {onViewAll && (
-        <button onClick={onViewAll} className="text-[10px] md:text-[11px] font-semibold text-amber-500 hover:text-amber-400">View all</button>
+        <button onClick={onViewAll} className="text-[10px] md:text-[11px] font-semibold text-amber-500 hover:text-amber-400" aria-label="View all">View all</button>
       )}
     </div>
   );
-}
-
-// ============================================================
-// UPDATED FullListOverlay – mobile-friendly "Load More"
-// ============================================================
-function FullListOverlay({ type, title, items, onClose, onPlay, onToggleList, isInList }: any) {
-  const [visibleCount, setVisibleCount] = useState(50);
-  const batchSize = 50;
-
-  useEffect(() => {
-    setVisibleCount(Math.min(50, items.length));
-  }, [items]);
-
-  const visibleItems = items.slice(0, visibleCount);
-  const hasMore = visibleCount < items.length;
-
-  const loadMore = () => {
-    setVisibleCount(prev => Math.min(prev + batchSize, items.length));
-  };
-
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, []);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-[#06070d] overflow-y-auto">
-      <div className="max-w-[1400px] mx-auto min-h-screen p-3 md:p-6 pb-24 md:pb-12">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4 sticky top-0 bg-[#06070d] z-10 py-2">
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="p-1.5 md:p-2 bg-zinc-900/60 rounded-xl text-zinc-400 hover:text-white">
-              <X className="w-5 h-5" />
-            </button>
-            <h2 className="text-lg md:text-xl font-black text-white">{title}</h2>
-          </div>
-          <span className="text-xs text-zinc-500">
-            {visibleCount} of {items.length} items
-          </span>
-        </div>
-
-        {/* Grid */}
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 md:gap-3">
-          {visibleItems.map((item: any) => (
-            <AnimeCard
-              key={item.id}
-              anime={item}
-              onPlay={() => onPlay(item)}
-              onToggleList={() => onToggleList(item)}
-              isInList={isInList(item)}
-            />
-          ))}
-        </div>
-
-        {/* Load More Button – mobile friendly */}
-        {hasMore && (
-          <div className="flex justify-center mt-6 px-2">
-            <button
-              onClick={loadMore}
-              className="w-full sm:w-auto px-6 py-3 sm:py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-bold text-zinc-300 transition-colors touch-manipulation"
-            >
-              Load More ({visibleCount}/{items.length})
-            </button>
-          </div>
-        )}
-
-        {!hasMore && items.length > 0 && (
-          <p className="text-center text-zinc-500 text-xs mt-6">All items loaded</p>
-        )}
-      </div>
-    </div>
-  );
-}
+});
 
 // ============================================================
 // MAIN HOMEPAGE COMPONENT
@@ -357,18 +472,22 @@ export default function HomePage() {
   const [newlyAddedIds, setNewlyAddedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [userDataLoaded, setUserDataLoaded] = useState(false);
-
   const [rawWatchHistory, setRawWatchHistory] = useState<any[]>([]);
   const [watchlistIds, setWatchlistIds] = useState<string[]>([]);
-
   const [activeGenre, setActiveGenre] = useState('All');
   const [showAllGenres, setShowAllGenres] = useState(false);
   const [popularTypeFilter, setPopularTypeFilter] = useState('All');
   const [currentFeaturedIndex, setCurrentFeaturedIndex] = useState(0);
   const [fullList, setFullList] = useState<{ type: string; title: string } | null>(null);
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
 
-  // ---- Instant cache load ----
+  useEffect(() => {
+    const handleScroll = () => setShowBackToTop(window.scrollY > 400);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   useLayoutEffect(() => {
     const cachedHome = getCachedHomeData();
     if (cachedHome) {
@@ -390,26 +509,30 @@ export default function HomePage() {
     }
   }, [user]);
 
-  // ---- Background API fetch ----
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [animeRes, episodesRes, scheduleRes, newsRes, featuredRes, newlyAddedRes] =
-          await Promise.all([
-            CloudflareAPI.getAnime(),
-            CloudflareAPI.getEpisodes(),
-            CloudflareAPI.getSchedule(),
-            CloudflareAPI.getNews(),
-            CloudflareAPI.getFeatured(),
-            CloudflareAPI.getNewlyAdded(),
-          ]);
+        const [animeRes, episodesRes, scheduleRes, newsRes, featuredRes, newlyAddedRes] = await Promise.all([
+          CloudflareAPI.getAnime(),
+          CloudflareAPI.getEpisodes(),
+          CloudflareAPI.getSchedule(),
+          CloudflareAPI.getNews(),
+          CloudflareAPI.getFeatured(),
+          CloudflareAPI.getNewlyAdded(),
+        ]);
 
         const freshAnime = animeRes.anime || [];
         const freshEpisodes = episodesRes.episodes || [];
         const freshSchedule = scheduleRes.schedule || [];
         const freshNews = newsRes.news || [];
-        const freshFeatured = featuredRes.featured || [];
-        const freshNewlyAdded = newlyAddedRes.newlyAdded || [];
+        let freshFeatured = featuredRes.featured || [];
+        let freshNewlyAdded = newlyAddedRes.newlyAdded || [];
+
+        const validAnimeIds = new Set(freshAnime.map((a: any) => a.id));
+        freshFeatured = freshFeatured.filter((id: string) => id && validAnimeIds.has(id));
+        freshFeatured = [...new Set(freshFeatured)];
+        freshNewlyAdded = freshNewlyAdded.filter((id: string) => id && validAnimeIds.has(id));
+        freshNewlyAdded = [...new Set(freshNewlyAdded)];
 
         setAnimeList(freshAnime);
         setEpisodes(freshEpisodes);
@@ -435,7 +558,6 @@ export default function HomePage() {
     fetchData();
   }, []);
 
-  // ---- Fetch user data ----
   useEffect(() => {
     if (!user) {
       setRawWatchHistory([]);
@@ -485,7 +607,6 @@ export default function HomePage() {
     fetchUserData();
   }, [user]);
 
-  // ---- Auto‑refresh on tab focus ----
   useEffect(() => {
     if (!user) return;
 
@@ -511,9 +632,7 @@ export default function HomePage() {
             const historyRows = watchData || [];
             const wlIds = bookmarks ? bookmarks.map(b => b.anime_id) : [];
 
-            if (historyRows.length === 0 && wlIds.length === 0 && hasCache) {
-              return;
-            }
+            if (historyRows.length === 0 && wlIds.length === 0 && hasCache) return;
 
             if (historyRows.length > 0 || wlIds.length > 0) {
               setRawWatchHistory(historyRows);
@@ -534,7 +653,6 @@ export default function HomePage() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [user]);
 
-  // ---- Derived data ----
   const continueWatching = useMemo(() => {
     if (!userDataLoaded || animeList.length === 0) return [];
     return rawWatchHistory
@@ -563,7 +681,6 @@ export default function HomePage() {
       .filter(Boolean) as Anime[];
   }, [watchlistIds, animeList, userDataLoaded]);
 
-  // ---- Auto-rotate banner ----
   useEffect(() => {
     if (featuredIds.length === 0) return;
     const interval = setInterval(() => {
@@ -572,33 +689,45 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [featuredIds]);
 
-  // ---- Language filtering ----
-  const episodesWithLang = selectedLanguage === 'all'
-    ? episodes
-    : episodes.filter(ep => ep.languages && ep.languages[selectedLanguage] && ep.languages[selectedLanguage].trim() !== '');
-  const animeIdsWithLang = new Set(episodesWithLang.map(ep => ep.anime_id));
-  const filteredAnimeList = selectedLanguage === 'all'
-    ? animeList
-    : animeList.filter(a => animeIdsWithLang.has(a.id));
+  const episodesWithLang = useMemo(() => {
+    if (selectedLanguage === 'all') return episodes;
+    return episodes.filter(ep => ep.languages && ep.languages[selectedLanguage] && ep.languages[selectedLanguage].trim() !== '');
+  }, [episodes, selectedLanguage]);
+
+  const animeIdsWithLang = useMemo(() => new Set(episodesWithLang.map(ep => ep.anime_id)), [episodesWithLang]);
+  const filteredAnimeList = useMemo(() => {
+    if (selectedLanguage === 'all') return animeList;
+    return animeList.filter(a => animeIdsWithLang.has(a.id));
+  }, [animeList, animeIdsWithLang, selectedLanguage]);
+
   const displayAnime = filteredAnimeList.length > 0 ? filteredAnimeList : animeList;
 
-  const allGenres = [...new Set(displayAnime.flatMap(a => (a.genre || '').split(',').map(g => g.trim())).filter(Boolean))].sort();
-  const initialGenres = [
-    { name: "All", icon: "✨" },
-    ...allGenres.slice(0, 8).map(g => ({ name: g, icon: '📌' })),
-    { name: "More", icon: "•••" }
-  ];
-  const extendedGenres = [
-    { name: "All", icon: "✨" },
-    ...allGenres.map(g => ({ name: g, icon: '📌' })),
-  ];
+  const allGenres = useMemo(() => {
+    return [...new Set(displayAnime.flatMap(a => (a.genre || '').split(',').map(g => g.trim())).filter(Boolean))].sort();
+  }, [displayAnime]);
+
+  const initialGenres = useMemo(() => {
+    return [
+      { name: "All", icon: "✨" },
+      ...allGenres.slice(0, 8).map(g => ({ name: g, icon: '📌' })),
+      { name: "More", icon: "•••" }
+    ];
+  }, [allGenres]);
+
+  const extendedGenres = useMemo(() => {
+    return [
+      { name: "All", icon: "✨" },
+      ...allGenres.map(g => ({ name: g, icon: '📌' })),
+    ];
+  }, [allGenres]);
+
   const displayedGenres = showAllGenres ? extendedGenres : initialGenres;
 
-  const genreFiltered = activeGenre === 'All'
-    ? displayAnime
-    : displayAnime.filter(a => (a.genre || '').toLowerCase().includes(activeGenre.toLowerCase()));
+  const genreFiltered = useMemo(() => {
+    if (activeGenre === 'All') return displayAnime;
+    return displayAnime.filter(a => (a.genre || '').toLowerCase().includes(activeGenre.toLowerCase()));
+  }, [displayAnime, activeGenre]);
 
-  // ----- Full (unsliced) lists for "View All" -----
   const fullNewlyAdded = useMemo(() => {
     if (newlyAddedIds.length > 0) {
       return newlyAddedIds
@@ -626,7 +755,6 @@ export default function HomePage() {
     });
   }, [episodesWithLang, displayAnime]);
 
-  // ---- Sliced lists for carousels ----
   const newlyAdded = useMemo(() => fullNewlyAdded.slice(0, 10), [fullNewlyAdded]);
   const topRated = useMemo(() => fullTopRated.slice(0, 12), [fullTopRated]);
   const latestEpisodes = useMemo(() => fullLatestEpisodes.slice(0, 12), [fullLatestEpisodes]);
@@ -635,7 +763,6 @@ export default function HomePage() {
     return [...genreFiltered].sort((a, b) => (parseInt(b.id) - parseInt(a.id)));
   }, [genreFiltered]);
 
-  // ---- Normalised types ----
   const uniqueTypes = useMemo(() => {
     const types = displayAnime
       .map(a => normalizeType(a.type))
@@ -643,7 +770,6 @@ export default function HomePage() {
     return [...new Set(types)];
   }, [displayAnime]);
 
-  // ---- Popular shows (full, unsliced) ----
   const popularAnime = useMemo(() => {
     const filtered = popularTypeFilter === 'All'
       ? genreFiltered
@@ -653,13 +779,18 @@ export default function HomePage() {
 
   const featuredAnime = featuredIds.length > 0
     ? animeList.find(a => a.id === featuredIds[currentFeaturedIndex % featuredIds.length])
-    : (displayAnime.length > 0 ? displayAnime[0] : null);
+    : null;
 
-  const publishedNews = newsItems.filter(n => n.status === 'published').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const mostWatched = [...displayAnime].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
+  const publishedNews = useMemo(() => {
+    return newsItems.filter(n => n.status === 'published').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [newsItems]);
+
+  const mostWatched = useMemo(() => {
+    return [...displayAnime].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
+  }, [displayAnime]);
+
   const DAYS_SHORT = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-  // ---- Full list overlay items ----
   const fullListItems = useMemo(() => {
     if (!fullList) return [];
     switch (fullList.type) {
@@ -681,8 +812,7 @@ export default function HomePage() {
     }
   }, [fullList, fullLatestEpisodes, displayAnime, popularAnime, trendingAnime, fullNewlyAdded, fullTopRated]);
 
-  // ---- Handlers ----
-  const toggleWatchlist = async (anime: any) => {
+  const toggleWatchlist = useCallback(async (anime: any) => {
     if (!user) {
       alert('Please login to add to watchlist!');
       return;
@@ -698,53 +828,68 @@ export default function HomePage() {
     }
     setWatchlistIds(updatedIds);
     saveUserCache(user.id, rawWatchHistory, updatedIds);
-  };
+  }, [user, watchlistIds, rawWatchHistory]);
 
-  const isInList = (anime: any) => watchlistIds.includes(anime.id);
-  const goToPrevHero = () => {
+  const isInList = useCallback((anime: any) => watchlistIds.includes(anime.id), [watchlistIds]);
+
+  const goToPrevHero = useCallback(() => {
     if (featuredIds.length === 0) return;
     setCurrentFeaturedIndex(prev => (prev - 1 + featuredIds.length) % featuredIds.length);
-  };
-  const goToNextHero = () => {
+  }, [featuredIds]);
+
+  const goToNextHero = useCallback(() => {
     if (featuredIds.length === 0) return;
     setCurrentFeaturedIndex(prev => (prev + 1) % featuredIds.length);
-  };
-  const handlePlay = (anime: any) => {
-    router.push(`/watch?anime=${anime.id}`);
-  };
-  const goToWatchHistory = () => router.push('/profile?tab=Watch%20History');
-  const goToMyList = () => router.push('/profile?tab=My%20List');
-  const handleNewsClick = (news: NewsItem) => setSelectedNews(news);
-  const handleCloseNews = () => setSelectedNews(null);
+  }, [featuredIds]);
 
-  // ---- Skeleton ----
+  const handlePlay = useCallback((anime: any) => {
+    router.push(`/watch?anime=${anime.id}`);
+  }, [router]);
+
+  const goToWatchHistory = useCallback(() => router.push('/profile?tab=Watch%20History'), [router]);
+  const goToMyList = useCallback(() => router.push('/profile?tab=My%20List'), [router]);
+
+  const handleNewsClick = useCallback((news: NewsItem) => setSelectedNews(news), []);
+  const handleCloseNews = useCallback(() => setSelectedNews(null), []);
+
+  const scrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
   if (loading && !animeList.length) {
     return (
       <div className="max-w-[1400px] mx-auto w-full px-3 md:px-6 py-4 space-y-5">
         <div className="h-[300px] md:h-80 bg-zinc-900 rounded-2xl animate-pulse" />
-        <div className="flex gap-2 overflow-x-auto">
-          {[1,2,3,4,5,6,7].map(i => <div key={i} className="h-7 w-16 bg-zinc-900 rounded-full animate-pulse" />)}
-        </div>
+        <CarouselSkeleton count={7} />
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3 md:gap-4">
-          {[1,2,3,4,5,6].map(i => <div key={i} className="h-48 bg-zinc-900 rounded-xl animate-pulse" />)}
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-48 bg-zinc-900 rounded-xl animate-pulse" />
+          ))}
         </div>
       </div>
     );
   }
 
-  // ---- News Detail Overlay ----
   if (selectedNews) {
     return (
       <div className="min-h-screen bg-[#040406] text-zinc-100 font-sans selection:bg-amber-500 flex flex-col">
         <main className="flex-1 w-full max-w-4xl mx-auto px-4 md:px-8 py-6 space-y-6 pb-24 md:pb-12">
-          <button onClick={handleCloseNews} className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group">
+          <button onClick={handleCloseNews} className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group" aria-label="Back to home">
             <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
             <span className="text-sm font-bold">Back to Home</span>
           </button>
           <div className="bg-[#0d0d14] border border-zinc-900 rounded-2xl overflow-hidden">
             {selectedNews.image && (
-              <div className="w-full aspect-video bg-zinc-900 overflow-hidden">
-                <img src={getSafeImage(selectedNews.image)} alt={selectedNews.title} className="w-full h-full object-cover" />
+              <div className="w-full aspect-video bg-zinc-900 overflow-hidden relative">
+                <Image
+                  src={getSafeImage(selectedNews.image)}
+                  alt={selectedNews.title}
+                  fill
+                  className="object-cover"
+                  priority
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  unoptimized
+                />
               </div>
             )}
             <div className="p-6 md:p-10 space-y-4">
@@ -763,7 +908,6 @@ export default function HomePage() {
     );
   }
 
-  // ---- Main Dashboard ----
   return (
     <>
       {fullList && (
@@ -780,6 +924,8 @@ export default function HomePage() {
 
       <HeroSection
         anime={featuredAnime}
+        index={currentFeaturedIndex}
+        total={featuredIds.length}
         onPrev={goToPrevHero}
         onNext={goToNextHero}
         onWatch={() => featuredAnime && handlePlay(featuredAnime)}
@@ -788,7 +934,6 @@ export default function HomePage() {
       />
 
       <div className="max-w-[1400px] mx-auto w-full px-0 md:px-6 py-4 md:py-5 space-y-5 md:space-y-6">
-        {/* Genre Filter */}
         <div className="px-3 md:px-0">
           <GenreFilter
             genres={displayedGenres}
@@ -802,13 +947,8 @@ export default function HomePage() {
         <div className="flex flex-col lg:flex-row gap-6 items-start w-full">
           <div className="w-full lg:w-[70%] flex flex-col gap-5 md:gap-6">
             
-            {/* Newly Added – 7 items */}
             <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
-              <SectionHeader
-                title="Newly Added"
-                icon="🆕"
-                onViewAll={() => setFullList({ type: 'newlyAdded', title: 'Newly Added' })}
-              />
+              <SectionHeader title="Newly Added" icon="🆕" onViewAll={() => setFullList({ type: 'newlyAdded', title: 'Newly Added' })} />
               <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
                 {newlyAdded.slice(0, 7).map((anime, index) => (
                   <AnimeCard
@@ -823,7 +963,6 @@ export default function HomePage() {
               </div>
             </section>
 
-            {/* Trending – 12 items */}
             <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <SectionHeader
                 title={`Trending Now ${activeGenre !== 'All' ? `in ${activeGenre}` : ''}`}
@@ -843,13 +982,8 @@ export default function HomePage() {
               </div>
             </section>
 
-            {/* Latest Updates – 12 items */}
             <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
-              <SectionHeader
-                title="Latest Updates"
-                icon="⚡"
-                onViewAll={() => setFullList({ type: 'updates', title: 'Latest Updates' })}
-              />
+              <SectionHeader title="Latest Updates" icon="⚡" onViewAll={() => setFullList({ type: 'updates', title: 'Latest Updates' })} />
               <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
                 {latestEpisodes.slice(0, 12).map(ep => {
                   const anime = displayAnime.find(a => a.id === ep.anime_id);
@@ -865,7 +999,6 @@ export default function HomePage() {
               </div>
             </section>
 
-            {/* Popular Shows – 12 items */}
             <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pb-1 border-b border-zinc-900/40">
                 <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
@@ -880,6 +1013,7 @@ export default function HomePage() {
                         className={`text-[9px] md:text-[10px] font-bold px-2 py-0.5 md:px-2.5 md:py-1 rounded transition-all duration-200 ${
                           popularTypeFilter === f ? "bg-amber-500 text-black shadow-[0_0_6px_rgba(245,158,11,0.3)]" : "text-zinc-500 hover:text-amber-400"
                         }`}
+                        aria-label={`Filter by ${f}`}
                       >
                         {f}
                       </button>
@@ -900,13 +1034,8 @@ export default function HomePage() {
               </div>
             </section>
 
-            {/* Top Rated – 12 items */}
             <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
-              <SectionHeader
-                title="Top Rated"
-                icon="🏆"
-                onViewAll={() => setFullList({ type: 'topRated', title: 'Top Rated' })}
-              />
+              <SectionHeader title="Top Rated" icon="🏆" onViewAll={() => setFullList({ type: 'topRated', title: 'Top Rated' })} />
               <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
                 {topRated.slice(0, 12).map(anime => (
                   <AnimeCard
@@ -920,7 +1049,6 @@ export default function HomePage() {
               </div>
             </section>
 
-            {/* Most Watched + Schedule Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 px-3 md:px-0">
               <div className="space-y-2 md:space-y-3 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
                 <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400">📊 Most Watched</h3>
@@ -928,7 +1056,15 @@ export default function HomePage() {
                   {mostWatched.map((anime, idx) => (
                     <div key={anime.id} className="flex items-center gap-2 bg-[#0d0e1a]/40 p-2 rounded-lg hover:border-amber-500/30 group cursor-pointer" onClick={() => handlePlay(anime)}>
                       <span className="text-xs md:text-sm font-black text-zinc-600 group-hover:text-amber-500 w-5">{String(idx+1).padStart(2,'0')}</span>
-                      <img src={getSafeImage(anime.image)} className="w-8 h-8 md:w-9 md:h-9 object-cover rounded-md" alt={anime.title} />
+                      <Image
+                        src={getSafeImage(anime.image)}
+                        alt={anime.title}
+                        width={36}
+                        height={36}
+                        className="w-8 h-8 md:w-9 md:h-9 object-cover rounded-md"
+                        loading="lazy"
+                        unoptimized
+                      />
                       <div className="min-w-0 flex-1"><h4 className="text-[10px] md:text-[11px] font-bold truncate">{anime.title}</h4></div>
                       <span className="text-[9px] md:text-[10px] text-amber-400">★ {anime.score}</span>
                     </div>
@@ -958,22 +1094,14 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* ==================== MOBILE ONLY SECTIONS ==================== */}
+            {/* MOBILE ONLY */}
             <div className="block md:hidden space-y-5">
-              
-              {/* Continue Watching */}
               <section className="space-y-2 px-3">
-                <SectionHeader
-                  title="Continue Watching"
-                  icon="📺"
-                  onViewAll={goToWatchHistory}
-                />
+                <SectionHeader title="Continue Watching" icon="📺" onViewAll={goToWatchHistory} />
                 <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
                   {!user ? (
                     <div className="text-xs text-zinc-500 py-4 w-full text-center">
-                      <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">
-                        Login
-                      </button> to see your continue watching.
+                      <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">Login</button> to see your continue watching.
                     </div>
                   ) : !userDataLoaded || animeList.length === 0 ? (
                     <div className="text-xs text-zinc-500 py-4 w-full text-center flex items-center justify-center gap-2">
@@ -985,7 +1113,15 @@ export default function HomePage() {
                     continueWatching.map((item, i) => (
                       <div key={i} className="flex-shrink-0 w-[130px] space-y-1 cursor-pointer" onClick={() => handlePlay({ id: item.animeId })}>
                         <div className="relative aspect-video bg-zinc-900 rounded-lg overflow-hidden">
-                          <img src={item.animeImage} className="w-full h-full object-cover opacity-80" alt="" />
+                          <Image
+                            src={item.animeImage}
+                            alt={item.animeTitle}
+                            fill
+                            className="object-cover opacity-80"
+                            loading="lazy"
+                            unoptimized
+                            sizes="(max-width: 768px) 130px, 130px"
+                          />
                           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                             <Play className="w-4 h-4 text-white fill-current" />
                           </div>
@@ -1001,19 +1137,12 @@ export default function HomePage() {
                 </div>
               </section>
 
-              {/* My Watchlist */}
               <section className="space-y-2 px-3">
-                <SectionHeader
-                  title="My Watchlist"
-                  icon="🔖"
-                  onViewAll={goToMyList}
-                />
+                <SectionHeader title="My Watchlist" icon="🔖" onViewAll={goToMyList} />
                 <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
                   {!user ? (
                     <div className="text-xs text-zinc-500 py-4 w-full text-center">
-                      <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">
-                        Login
-                      </button> to add bookmarks.
+                      <button onClick={() => router.push('/profile')} className="text-amber-400 hover:underline">Login</button> to add bookmarks.
                     </div>
                   ) : !userDataLoaded || animeList.length === 0 ? (
                     <div className="text-xs text-zinc-500 py-4 w-full text-center flex items-center justify-center gap-2">
@@ -1025,7 +1154,15 @@ export default function HomePage() {
                     watchlistItems.map((item) => (
                       <div key={item.id} className="flex-shrink-0 w-[90px] space-y-1 cursor-pointer" onClick={() => handlePlay(item)}>
                         <div className="relative aspect-[3/4] bg-zinc-900 rounded-lg overflow-hidden border border-zinc-900">
-                          <img src={item.image} className="w-full h-full object-cover" alt="" />
+                          <Image
+                            src={item.image}
+                            alt={item.title}
+                            fill
+                            className="object-cover"
+                            loading="lazy"
+                            unoptimized
+                            sizes="(max-width: 768px) 90px, 90px"
+                          />
                         </div>
                         <h4 className="text-[9px] font-bold text-zinc-200 truncate">{item.title}</h4>
                       </div>
@@ -1034,13 +1171,22 @@ export default function HomePage() {
                 </div>
               </section>
 
-              {/* Anime News – 5 items for mobile */}
               <section className="space-y-2 px-3">
                 <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400">📰 Anime News</h3>
                 <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
                   {publishedNews.slice(0, 5).map((n) => (
                     <div key={n.id} onClick={() => handleNewsClick(n)} className="flex-shrink-0 w-[200px] bg-[#0d0e1a]/40 border border-zinc-900/60 p-2.5 rounded-xl flex gap-2.5 cursor-pointer hover:border-amber-500/30 transition-all">
-                      {n.image && <img src={getSafeImage(n.image)} alt="" className="w-14 h-14 object-cover rounded-lg shrink-0" />}
+                      {n.image && (
+                        <Image
+                          src={getSafeImage(n.image)}
+                          alt=""
+                          width={56}
+                          height={56}
+                          className="w-14 h-14 object-cover rounded-lg shrink-0"
+                          loading="lazy"
+                          unoptimized
+                        />
+                      )}
                       <div className="flex-1 min-w-0">
                         <h4 className="text-[10px] font-bold text-zinc-200 line-clamp-2">{n.title}</h4>
                         <p className="text-[8px] text-zinc-400 mt-1 line-clamp-2">{n.content}</p>
@@ -1051,18 +1197,10 @@ export default function HomePage() {
                 </div>
               </section>
 
-              {/* Recommended – 8 items + View all */}
               <section className="space-y-2 px-3">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                    🎯 Recommended
-                  </h3>
-                  <button
-                    onClick={() => setFullList({ type: 'trending', title: 'Trending Now' })}
-                    className="text-[10px] md:text-[11px] font-semibold text-amber-500 hover:text-amber-400"
-                  >
-                    View all
-                  </button>
+                  <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">🎯 Recommended</h3>
+                  <button onClick={() => setFullList({ type: 'trending', title: 'Trending Now' })} className="text-[10px] md:text-[11px] font-semibold text-amber-500 hover:text-amber-400">View all</button>
                 </div>
                 <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
                   {trendingAnime.slice(0, 8).map(anime => (
@@ -1077,10 +1215,9 @@ export default function HomePage() {
                 </div>
               </section>
             </div>
-            {/* ==================== END MOBILE ONLY SECTIONS ==================== */}
           </div>
 
-          {/* ==================== DESKTOP SIDEBAR ==================== */}
+          {/* DESKTOP SIDEBAR */}
           <div className="hidden lg:flex lg:w-[30%] flex-col gap-5 sticky top-20">
             <div className="bg-[#0a0b12] border border-zinc-900/60 rounded-xl p-4 space-y-3">
               <SectionHeader title="Continue Watching" icon="📺" onViewAll={goToWatchHistory} />
@@ -1099,7 +1236,15 @@ export default function HomePage() {
                   {continueWatching.slice(0, 3).map((item, i) => (
                     <div key={i} className="flex items-center gap-3 group cursor-pointer" onClick={() => handlePlay({ id: item.animeId })}>
                       <div className="relative w-16 h-10 bg-zinc-900 rounded-md overflow-hidden border border-zinc-900 shrink-0">
-                        <img src={item.animeImage} className="w-full h-full object-cover opacity-80" alt="" />
+                        <Image
+                          src={item.animeImage}
+                          alt=""
+                          fill
+                          className="object-cover opacity-80"
+                          loading="lazy"
+                          unoptimized
+                          sizes="64px"
+                        />
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40">
                           <Play className="w-2.5 h-2.5 text-white fill-current" />
                         </div>
@@ -1135,10 +1280,18 @@ export default function HomePage() {
                   {watchlistItems.slice(0, 3).map((item) => (
                     <div key={item.id} className="flex items-center justify-between gap-3 group">
                       <div className="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onClick={() => handlePlay(item)}>
-                        <img src={item.image} className="w-8 h-8 object-cover rounded border border-zinc-900 shrink-0" alt="" />
+                        <Image
+                          src={item.image}
+                          alt=""
+                          width={32}
+                          height={32}
+                          className="w-8 h-8 object-cover rounded border border-zinc-900 shrink-0"
+                          loading="lazy"
+                          unoptimized
+                        />
                         <h4 className="text-[11px] font-bold truncate text-zinc-300">{item.title}</h4>
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); toggleWatchlist(item); }} className="text-zinc-500 hover:text-amber-500 shrink-0">
+                      <button onClick={(e) => { e.stopPropagation(); toggleWatchlist(item); }} className="text-zinc-500 hover:text-amber-500 shrink-0" aria-label={isInList(item) ? 'Remove from watchlist' : 'Add to watchlist'}>
                         <Bookmark className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                       </button>
                     </div>
@@ -1162,6 +1315,16 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      <button
+        onClick={scrollToTop}
+        className={`fixed bottom-24 right-4 z-30 p-2 rounded-full bg-amber-500 text-black shadow-lg shadow-amber-500/30 transition-all duration-300 md:hidden ${
+          showBackToTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'
+        }`}
+        aria-label="Back to top"
+      >
+        <ArrowUp className="w-5 h-5" />
+      </button>
     </>
   );
 }
