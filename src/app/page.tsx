@@ -121,7 +121,7 @@ function normalizeType(type: string | undefined | null): string {
 }
 
 // ============================================================
-// LIGHTWEIGHT FALLBACK – small SVG (TV icon + "No Preview")
+// LIGHTWEIGHT FALLBACK
 // ============================================================
 const FALLBACK_IMAGE = `data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="200" height="280">
@@ -141,7 +141,7 @@ function getSafeImage(url: string | undefined | null): string {
 }
 
 // ============================================================
-// SKELETON COMPONENT
+// SKELETON
 // ============================================================
 const CarouselSkeleton = ({ count = 7 }: { count?: number }) => (
   <div className="flex gap-3 overflow-x-auto pb-2">
@@ -156,16 +156,25 @@ const CarouselSkeleton = ({ count = 7 }: { count?: number }) => (
 );
 
 // ============================================================
-// FULL LIST OVERLAY (same as before, but uses AnimeCard)
+// FULL LIST OVERLAY – now handles both AnimeCard and EpisodeCard
 // ============================================================
-function FullListOverlay({ type, title, items, onClose, onPlay, onToggleList, isInList }: any) {
-  const [visibleCount, setVisibleCount] = useState(50);
+function FullListOverlay({
+  type,
+  title,
+  items,
+  onClose,
+  onPlay,
+  onToggleList,
+  isInList,
+  initialCount = 50,
+  batchSize = 50,
+}: any) {
+  const [visibleCount, setVisibleCount] = useState(initialCount);
   const [loadingMore, setLoadingMore] = useState(false);
-  const batchSize = 50;
 
   useEffect(() => {
-    setVisibleCount(Math.min(50, items.length));
-  }, [items]);
+    setVisibleCount(Math.min(initialCount, items.length));
+  }, [items, initialCount]);
 
   const visibleItems = items.slice(0, visibleCount);
   const hasMore = visibleCount < items.length;
@@ -173,7 +182,7 @@ function FullListOverlay({ type, title, items, onClose, onPlay, onToggleList, is
   const loadMore = async () => {
     setLoadingMore(true);
     await new Promise(resolve => setTimeout(resolve, 300));
-    setVisibleCount(prev => Math.min(prev + batchSize, items.length));
+    setVisibleCount((prev: number) => Math.min(prev + batchSize, items.length));
     setLoadingMore(false);
   };
 
@@ -210,15 +219,29 @@ function FullListOverlay({ type, title, items, onClose, onPlay, onToggleList, is
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
-            {visibleItems.map((item: any) => (
-              <AnimeCard
-                key={item.id}
-                anime={item}
-                onPlay={() => onPlay(item)}
-                onToggleList={() => onToggleList(item)}
-                isInList={isInList(item)}
-              />
-            ))}
+            {visibleItems.map((item: any) => {
+              // If the item has an episode number, render EpisodeCard
+              if (item.number !== undefined && item._anime) {
+                return (
+                  <EpisodeCard
+                    key={item.id}
+                    episode={item}
+                    anime={item._anime}
+                    onPlay={() => onPlay(item)}
+                  />
+                );
+              }
+              // Otherwise render AnimeCard
+              return (
+                <AnimeCard
+                  key={item.id}
+                  anime={item}
+                  onPlay={() => onPlay(item)}
+                  onToggleList={() => onToggleList(item)}
+                  isInList={isInList(item)}
+                />
+              );
+            })}
           </div>
 
           <div className="mt-8 flex justify-center">
@@ -375,7 +398,6 @@ const GenreFilter = React.memo(function GenreFilter({ genres, activeGenre, onSel
   );
 });
 
-// ------ KEY FIX: faster image loading with unoptimized and NO sizes for small cards ------
 const AnimeCard = React.memo(function AnimeCard({ anime, onPlay, onToggleList, isInList, rank }: any) {
   const [imgError, setImgError] = useState(false);
 
@@ -390,7 +412,6 @@ const AnimeCard = React.memo(function AnimeCard({ anime, onPlay, onToggleList, i
           loading="lazy"
           onError={() => setImgError(true)}
           unoptimized
-          // NO 'sizes' – speeds up loading for small cards
         />
         {rank && (
           <span className="absolute top-1.5 left-1.5 bg-black/50 backdrop-blur-sm text-white text-xs md:text-sm font-black px-2 py-0.5 rounded-md shadow-lg">
@@ -415,7 +436,6 @@ const AnimeCard = React.memo(function AnimeCard({ anime, onPlay, onToggleList, i
   );
 });
 
-// EpisodeCard also uses unoptimized, no sizes
 const EpisodeCard = React.memo(function EpisodeCard({ episode, anime, onPlay }: any) {
   const [imgError, setImgError] = useState(false);
 
@@ -458,7 +478,7 @@ const SectionHeader = React.memo(function SectionHeader({ title, icon, onViewAll
 });
 
 // ============================================================
-// MAIN HOMEPAGE COMPONENT
+// MAIN HOMEPAGE
 // ============================================================
 export default function HomePage() {
   const { user, selectedLanguage } = useApp();
@@ -728,16 +748,16 @@ export default function HomePage() {
     return displayAnime.filter(a => (a.genre || '').toLowerCase().includes(activeGenre.toLowerCase()));
   }, [displayAnime, activeGenre]);
 
+  // ---------- Newly Added: 52 most recent ----------
   const fullNewlyAdded = useMemo(() => {
-    if (newlyAddedIds.length > 0) {
-      return newlyAddedIds
-        .map(id => genreFiltered.find(a => a.id === id))
-        .filter(Boolean) as Anime[];
-    }
-    return [...genreFiltered]
-      .filter(a => a.created_at)
-      .sort((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
-  }, [genreFiltered, newlyAddedIds]);
+    let result = genreFiltered.filter(a => a.created_at);
+    result.sort((a, b) => {
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateB - dateA;
+    });
+    return result.slice(0, 52);
+  }, [genreFiltered]);
 
   const fullTopRated = useMemo(() => {
     return [...genreFiltered]
@@ -745,6 +765,7 @@ export default function HomePage() {
       .sort((a, b) => (b.score || 0) - (a.score || 0));
   }, [genreFiltered]);
 
+  // ---------- Latest Updates: keep episode data ----------
   const fullLatestEpisodes = useMemo(() => {
     const filtered = episodesWithLang.filter(ep => displayAnime.some(a => a.id === ep.anime_id));
     return filtered.sort((a, b) => {
@@ -755,7 +776,7 @@ export default function HomePage() {
     });
   }, [episodesWithLang, displayAnime]);
 
-  const newlyAdded = useMemo(() => fullNewlyAdded.slice(0, 10), [fullNewlyAdded]);
+  const newlyAdded = useMemo(() => fullNewlyAdded.slice(0, 7), [fullNewlyAdded]);
   const topRated = useMemo(() => fullTopRated.slice(0, 12), [fullTopRated]);
   const latestEpisodes = useMemo(() => fullLatestEpisodes.slice(0, 12), [fullLatestEpisodes]);
 
@@ -791,13 +812,18 @@ export default function HomePage() {
 
   const DAYS_SHORT = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
+  // ---------- Build items for the overlay ----------
   const fullListItems = useMemo(() => {
     if (!fullList) return [];
     switch (fullList.type) {
       case 'updates':
+        // Each item is an episode with its own data, plus a reference to the anime
         return fullLatestEpisodes.map(ep => {
           const anime = displayAnime.find(a => a.id === ep.anime_id);
-          return { ...ep, ...anime };
+          return {
+            ...ep,                  // episode id, number, title, etc.
+            _anime: anime,         // full anime object for display
+          };
         });
       case 'popular':
         return popularAnime;
@@ -812,6 +838,14 @@ export default function HomePage() {
     }
   }, [fullList, fullLatestEpisodes, displayAnime, popularAnime, trendingAnime, fullNewlyAdded, fullTopRated]);
 
+  const getOverlayProps = useCallback(() => {
+    if (fullList?.type === 'newlyAdded') {
+      return { initialCount: 26, batchSize: 11 };
+    }
+    return { initialCount: 50, batchSize: 50 };
+  }, [fullList]);
+
+  // ---------- Handlers ----------
   const toggleWatchlist = useCallback(async (anime: any) => {
     if (!user) {
       alert('Please login to add to watchlist!');
@@ -842,8 +876,15 @@ export default function HomePage() {
     setCurrentFeaturedIndex(prev => (prev + 1) % featuredIds.length);
   }, [featuredIds]);
 
-  const handlePlay = useCallback((anime: any) => {
-    router.push(`/watch?anime=${anime.id}`);
+  // ---------- handlePlay: supports both anime and episode ----------
+  const handlePlay = useCallback((item: any) => {
+    if (item.anime_id && item.number !== undefined) {
+      // It's an episode: go to the episode page
+      router.push(`/watch?anime=${item.anime_id}&ep=${item.number}`);
+    } else if (item.id) {
+      // It's an anime: go to the anime page (episode 1)
+      router.push(`/watch?anime=${item.id}`);
+    }
   }, [router]);
 
   const goToWatchHistory = useCallback(() => router.push('/profile?tab=Watch%20History'), [router]);
@@ -908,6 +949,8 @@ export default function HomePage() {
     );
   }
 
+  const overlayProps = getOverlayProps();
+
   return (
     <>
       {fullList && (
@@ -919,6 +962,8 @@ export default function HomePage() {
           onPlay={handlePlay}
           onToggleList={toggleWatchlist}
           isInList={isInList}
+          initialCount={overlayProps.initialCount}
+          batchSize={overlayProps.batchSize}
         />
       )}
 
@@ -950,7 +995,7 @@ export default function HomePage() {
             <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <SectionHeader title="Newly Added" icon="🆕" onViewAll={() => setFullList({ type: 'newlyAdded', title: 'Newly Added' })} />
               <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
-                {newlyAdded.slice(0, 7).map((anime, index) => (
+                {newlyAdded.map((anime, index) => (
                   <AnimeCard
                     key={anime.id}
                     anime={anime}
@@ -985,14 +1030,14 @@ export default function HomePage() {
             <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <SectionHeader title="Latest Updates" icon="⚡" onViewAll={() => setFullList({ type: 'updates', title: 'Latest Updates' })} />
               <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
-                {latestEpisodes.slice(0, 12).map(ep => {
+                {latestEpisodes.map(ep => {
                   const anime = displayAnime.find(a => a.id === ep.anime_id);
                   return (
                     <EpisodeCard
                       key={ep.id}
                       episode={ep}
                       anime={anime}
-                      onPlay={() => anime && handlePlay(anime)}
+                      onPlay={() => handlePlay({ ...ep, _anime: anime })}
                     />
                   );
                 })}
@@ -1037,7 +1082,7 @@ export default function HomePage() {
             <section className="space-y-2 md:space-y-3 px-3 md:px-0 md:bg-[#0a0b12] md:border md:border-zinc-900/60 md:rounded-xl p-0 md:p-4">
               <SectionHeader title="Top Rated" icon="🏆" onViewAll={() => setFullList({ type: 'topRated', title: 'Top Rated' })} />
               <div className="flex gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-2">
-                {topRated.slice(0, 12).map(anime => (
+                {topRated.map(anime => (
                   <AnimeCard
                     key={anime.id}
                     anime={anime}

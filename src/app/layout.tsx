@@ -10,6 +10,11 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "AnimeTown - Anime Streaming",
   description: "Watch your favorite anime online",
+  verification: {
+    other: {
+      "p:domain_verify": "c0dd6b632e0fea490296348ce1c285f1",
+    },
+  },
 };
 
 export default function RootLayout({
