@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
 import { useSearchParams, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { 
   Search, X, ChevronDown, Flame, Star, ChevronLeft, ChevronRight,
-  Bookmark, Play, Filter, ArrowUp, Loader2
+  Bookmark, Play, Filter, ArrowUp
 } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import { supabase } from '@/lib/supabaseClient';
@@ -44,23 +44,35 @@ function getSafeImage(url: string | undefined | null): string {
 }
 
 // ============================================================
-// CACHE HELPERS
+// CACHE HELPERS – SHARED WITH HOME PAGE
 // ============================================================
-const SEARCH_CACHE_KEY = 'searchDataCache';
+const HOME_CACHE_KEY = 'homeDataCache';
 
-function getCachedSearchData() {
+function getCachedHomeData() {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(SEARCH_CACHE_KEY);
+    const raw = localStorage.getItem(HOME_CACHE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return {
+      animeList: parsed.animeList || [],
+      episodes: parsed.episodes || [],
+    };
   } catch { return null; }
 }
 
-function saveSearchCache(animeList: any[], episodes: any[]) {
+function saveToHomeCache(animeList: any[], episodes: any[]) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({ animeList, episodes }));
+    // Get existing cache to preserve other fields (featuredIds, etc.)
+    const existingRaw = localStorage.getItem(HOME_CACHE_KEY);
+    const existing = existingRaw ? JSON.parse(existingRaw) : {};
+    const updated = {
+      ...existing,
+      animeList,
+      episodes,
+    };
+    localStorage.setItem(HOME_CACHE_KEY, JSON.stringify(updated));
   } catch {}
 }
 
@@ -235,9 +247,13 @@ function EmptySearchIllustration() {
 }
 
 // ============================================================
-// MAIN SEARCH PAGE CONTENT (uses useSearchParams)
+// MAIN SEARCH PAGE
 // ============================================================
-function SearchPageContent({ navigateTo }: { navigateTo?: (page: string, tab?: string, params?: any) => void }) {
+export default function SearchPage({
+  navigateTo,
+}: {
+  navigateTo?: (page: string, tab?: string, params?: any) => void;
+}) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { user, selectedLanguage } = useApp();
@@ -253,6 +269,7 @@ function SearchPageContent({ navigateTo }: { navigateTo?: (page: string, tab?: s
   const [episodes, setEpisodes] = useState<any[]>([]);
   const [watchlistItems, setWatchlistItems] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  const [dataFetched, setDataFetched] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState(initialSearch);
   const debouncedSearch = useDebounce(searchQuery, 400);
@@ -298,14 +315,21 @@ function SearchPageContent({ navigateTo }: { navigateTo?: (page: string, tab?: s
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // ---- Load anime & episodes from cache/API ----
+  // ---- Load anime & episodes from SHARED cache or API ----
   useLayoutEffect(() => {
-    const cachedSearch = getCachedSearchData();
-    if (cachedSearch) {
-      setAnimeList(cachedSearch.animeList || []);
-      setEpisodes(cachedSearch.episodes || []);
+    const cached = getCachedHomeData();
+    if (cached && cached.animeList.length > 0) {
+      setAnimeList(cached.animeList);
+      setEpisodes(cached.episodes);
       setDataLoading(false);
+      setDataFetched(true);
     }
+  }, []);
+
+  useEffect(() => {
+    // Skip if we already have data
+    if (dataFetched && animeList.length > 0) return;
+
     const fetchData = async () => {
       setDataLoading(true);
       try {
@@ -317,14 +341,15 @@ function SearchPageContent({ navigateTo }: { navigateTo?: (page: string, tab?: s
         const freshEpisodes = episodesRes.episodes || [];
         setAnimeList(freshAnime);
         setEpisodes(freshEpisodes);
-        saveSearchCache(freshAnime, freshEpisodes);
+        saveToHomeCache(freshAnime, freshEpisodes);
+        setDataFetched(true);
       } catch (error) {
         console.error('Failed to fetch search data:', error);
       }
       setDataLoading(false);
     };
-    if (!cachedSearch) fetchData();
-  }, []);
+    fetchData();
+  }, [dataFetched, animeList.length]);
 
   // ---- Load user's watchlist ----
   useEffect(() => {
@@ -828,20 +853,5 @@ function SearchPageContent({ navigateTo }: { navigateTo?: (page: string, tab?: s
         </button>
       </div>
     </>
-  );
-}
-
-// ============================================================
-// WRAPPER WITH SUSPENSE
-// ============================================================
-export default function SearchPageWrapper(props: any) {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#040406] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
-      </div>
-    }>
-      <SearchPageContent {...props} />
-    </Suspense>
   );
 }
