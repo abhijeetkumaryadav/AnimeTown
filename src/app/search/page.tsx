@@ -1,8 +1,6 @@
 "use client";
 
-
-export const dynamic = 'force-dynamic';
-
+import { Suspense } from 'react';
 import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
 import { useSearchParams, usePathname } from 'next/navigation';
 import Image from 'next/image';
@@ -67,7 +65,6 @@ function getCachedHomeData() {
 function saveToHomeCache(animeList: any[], episodes: any[]) {
   if (typeof window === 'undefined') return;
   try {
-    // Get existing cache to preserve other fields (featuredIds, etc.)
     const existingRaw = localStorage.getItem(HOME_CACHE_KEY);
     const existing = existingRaw ? JSON.parse(existingRaw) : {};
     const updated = {
@@ -250,13 +247,9 @@ function EmptySearchIllustration() {
 }
 
 // ============================================================
-// MAIN SEARCH PAGE
+// SEARCH CONTENT COMPONENT (uses useSearchParams)
 // ============================================================
-export default function SearchPage({
-  navigateTo,
-}: {
-  navigateTo?: (page: string, tab?: string, params?: any) => void;
-}) {
+function SearchContent({ navigateTo }: { navigateTo?: (page: string, tab?: string, params?: any) => void }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { user, selectedLanguage } = useApp();
@@ -330,9 +323,7 @@ export default function SearchPage({
   }, []);
 
   useEffect(() => {
-    // Skip if we already have data
     if (dataFetched && animeList.length > 0) return;
-
     const fetchData = async () => {
       setDataLoading(true);
       try {
@@ -536,9 +527,7 @@ export default function SearchPage({
   const showSkeleton = dataLoading && !animeList.length;
   const showMobileFirstPageRows = !isSearching && mobilePage === 1 && activeType === 'All' && selectedGenre === 'All';
 
-  // ============================================================
-  // RENDER
-  // ============================================================
+  // ---- RENDER ----
   return (
     <>
       {/* DESKTOP VIEW */}
@@ -856,5 +845,16 @@ export default function SearchPage({
         </button>
       </div>
     </>
+  );
+}
+
+// ============================================================
+// MAIN PAGE – Suspense boundary
+// ============================================================
+export default function SearchPage(props: { navigateTo?: (page: string, tab?: string, params?: any) => void }) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="text-zinc-500">Loading search...</div></div>}>
+      <SearchContent {...props} />
+    </Suspense>
   );
 }
